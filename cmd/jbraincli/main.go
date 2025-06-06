@@ -5,9 +5,9 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/terzigolu/josepshbrain-go/config"
 	"github.com/terzigolu/josepshbrain-go/internal/cli/commands"
-	"github.com/terzigolu/josepshbrain-go/repository"
+	"github.com/terzigolu/josepshbrain-go/pkg/config"
+	"github.com/terzigolu/josepshbrain-go/pkg/repository"
 )
 
 func main() {
@@ -39,18 +39,18 @@ Use 'jbraincli [command] --help' for command details`,
 	}
 
 	// Add modular commands with dependencies
-	rootCmd.AddCommand(commands.NewTaskCmd(db.DB))
-	rootCmd.AddCommand(commands.NewProjectCmd(db.DB))
-	rootCmd.AddCommand(commands.NewMemoryCmd(db.DB))
-	rootCmd.AddCommand(commands.NewKanbanCmd(db.DB))
+	rootCmd.AddCommand(commands.NewTaskCmd(db))
+	rootCmd.AddCommand(commands.NewProjectCmd(db))
+	rootCmd.AddCommand(commands.NewMemoryCmd(db))
+	rootCmd.AddCommand(commands.NewKanbanCmd(db))
 	
 	// Add root-level shortcuts for memory commands (like TS version)
-	rootCmd.AddCommand(commands.NewRememberCmd(db.DB))
-	rootCmd.AddCommand(commands.NewMemoriesCmd(db.DB))
+	rootCmd.AddCommand(commands.NewRememberCmd(db))
+	rootCmd.AddCommand(commands.NewMemoriesCmd(db))
 
 	// Add annotation commands
-	rootCmd.AddCommand(commands.NewAnnotationCmd())
-	rootCmd.AddCommand(commands.NewTaskAnnotationsCmd())
+	rootCmd.AddCommand(commands.NewAnnotationCmd(db))
+	rootCmd.AddCommand(commands.NewTaskAnnotationsCmd(db))
 
 	// Add root-level shortcuts for common project commands (like TS version)
 	rootCmd.AddCommand(&cobra.Command{
@@ -58,7 +58,7 @@ Use 'jbraincli [command] --help' for command details`,
 		Short: "Create a new project (shortcut for 'project init')",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			commands.NewProjectCmd(db.DB).Commands()[0].Run(cmd, args)
+			commands.NewProjectCmd(db).Commands()[0].Run(cmd, args)
 		},
 	})
 
@@ -67,7 +67,7 @@ Use 'jbraincli [command] --help' for command details`,
 		Short: "Set active project or show current (shortcut for 'project use')",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			commands.NewProjectCmd(db.DB).Commands()[1].Run(cmd, args)
+			commands.NewProjectCmd(db).Commands()[1].Run(cmd, args)
 		},
 	})
 
@@ -75,7 +75,7 @@ Use 'jbraincli [command] --help' for command details`,
 		Use:   "projects",
 		Short: "List all projects (shortcut for 'project list')",
 		Run: func(cmd *cobra.Command, args []string) {
-			commands.NewProjectCmd(db.DB).Commands()[2].Run(cmd, args)
+			commands.NewProjectCmd(db).Commands()[2].Run(cmd, args)
 		},
 	})
 

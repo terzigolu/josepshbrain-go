@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
@@ -32,19 +33,22 @@ type ServerConfig struct {
 
 // Load loads configuration from environment variables and config files
 func Load() (*Config, error) {
-	// Try to load .env file from multiple locations
+	// Try to load .env file from multiple locations (silently)
 	possibleEnvPaths := []string{
 		".env",                                                    // Current directory
 		"/Users/terzigolu/GitHub/josepshbrain-go/.env",           // Project directory
 		"/Users/terzigolu/.env",                                   // Home directory
 	}
 	
+	envLoaded := false
 	for _, path := range possibleEnvPaths {
 		if err := godotenv.Load(path); err == nil {
+			envLoaded = true
 			break // Successfully loaded, stop trying
 		}
 	}
 	
+	// Initialize viper
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
@@ -63,11 +67,34 @@ func Load() (*Config, error) {
 	// Enable environment variable support
 	viper.AutomaticEnv()
 
-	// Read config file if it exists
+	// Try to read config file (silently handle if not found)
+	configFileFound := true
 	if err := viper.ReadInConfig(); err != nil {
-		// It's okay if config file doesn't exist, we'll use defaults and env vars
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			configFileFound = false
+		} else {
 			return nil, fmt.Errorf("error reading config file: %w", err)
+		}
+	}
+
+	// Only log status if in verbose mode (check DEBUG env var)
+	if os.Getenv("DEBUG") == "true" {
+		fmt.Printf("Working directory: %s\n", getWorkingDir())
+		fmt.Printf("Env file loaded: %v\n", envLoaded)
+		fmt.Printf("Config file found: %v\n", configFileFound)
+		
+		// Debug actual config values
+		fmt.Printf("DB Host: %s\n", viper.GetString("database.host"))
+		fmt.Printf("DB Port: %d\n", viper.GetInt("database.port"))
+		fmt.Printf("DB Name: %s\n", viper.GetString("database.name"))
+		fmt.Printf("DB User: %s\n", viper.GetString("database.user"))
+		
+		if !envLoaded && !configFileFound {
+			fmt.Println("Config file not found, using environment variables and defaults")
+		} else if envLoaded {
+			fmt.Println("Configuration loaded from .env file")
+		} else if configFileFound {
+			fmt.Printf("Configuration loaded from %s\n", viper.ConfigFileUsed())
 		}
 	}
 
@@ -89,13 +116,16 @@ func getEnv(key, defaultValue string) string {
 
 func getEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
-		// Simple conversion for now
-		switch value {
-		case "5432":
-			return 5432
-		case "8080":
-			return 8080
+		if intVal, err := strconv.Atoi(value); err == nil {
+			return intVal
 		}
 	}
 	return defaultValue
+}
+
+func getWorkingDir() string {
+	if wd, err := os.Getwd(); err == nil {
+		return wd
+	}
+	return "unknown"
 } 

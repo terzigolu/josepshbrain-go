@@ -22,6 +22,7 @@ func NewTaskCmd(db *gorm.DB) *cobra.Command {
 	cmd.AddCommand(newTaskListCmd(db))
 	cmd.AddCommand(newTaskStartCmd(db))
 	cmd.AddCommand(newTaskDoneCmd(db))
+	cmd.AddCommand(newTaskInfoCmd(db))
 
 	return cmd
 }
@@ -148,5 +149,46 @@ func newTaskDoneCmd(db *gorm.DB) *cobra.Command {
 		},
 	}
 }
+
+// task info
+func newTaskInfoCmd(db *gorm.DB) *cobra.Command {
+	return &cobra.Command{
+		Use:   "info [id]",
+		Short: "Show detailed task information",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			taskID := args[0]
+			
+			var task models.Task
+			if err := db.Preload("Project").Preload("Annotations").Where("id::text LIKE ?", taskID+"%").First(&task).Error; err != nil {
+				log.Fatalf("Task not found: %v", err)
+			}
+
+			fmt.Println("🔍 Task Details:")
+			fmt.Println("================================================================================")
+			fmt.Printf("📝 ID:          %s\n", task.ID.String())
+			fmt.Printf("📋 Description: %s\n", task.Description)
+			fmt.Printf("📊 Status:      %s\n", task.Status)
+			fmt.Printf("⚡ Priority:    %s\n", task.Priority)
+			fmt.Printf("📈 Progress:    %d%%\n", task.Progress)
+			fmt.Printf("🏢 Project:     %s\n", task.Project.Name)
+			fmt.Printf("📅 Created:     %s\n", task.CreatedAt.Format("2006-01-02 15:04:05"))
+			fmt.Printf("🔄 Updated:     %s\n", task.UpdatedAt.Format("2006-01-02 15:04:05"))
+			
+			if len(task.Annotations) > 0 {
+				fmt.Printf("\n📝 Annotations (%d):\n", len(task.Annotations))
+				for i, annotation := range task.Annotations {
+					fmt.Printf("  %d. %s\n", i+1, annotation.Content)
+					fmt.Printf("     📅 %s\n", annotation.CreatedAt.Format("2006-01-02 15:04:05"))
+				}
+			} else {
+				fmt.Println("\n📝 Annotations: None")
+			}
+			
+			fmt.Println("================================================================================")
+		},
+	}
+}
+
 
  

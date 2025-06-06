@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/terzigolu/josepshbrain-go/pkg/config"
 	"github.com/terzigolu/josepshbrain-go/pkg/models"
@@ -21,11 +22,22 @@ func NewDatabase(cfg *config.Config) (*gorm.DB, error) {
 		cfg.Database.SSLMode,
 	)
 
+	// Temporary debug - always show database info
+	fmt.Printf("🔧 Connecting to database: %s@%s:%d/%s\n", 
+		cfg.Database.User, cfg.Database.Host, cfg.Database.Port, cfg.Database.Name)
+
+	// Set GORM logger level based on DEBUG env var
+	logLevel := logger.Silent
+	if os.Getenv("DEBUG") == "true" {
+		logLevel = logger.Info
+	}
+
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
+		Logger: logger.Default.LogMode(logLevel),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
+		return nil, fmt.Errorf("failed to connect to database %s@%s:%d: %w", 
+			cfg.Database.User, cfg.Database.Host, cfg.Database.Port, err)
 	}
 
 	// Enable UUID extension
@@ -38,8 +50,12 @@ func NewDatabase(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to auto migrate: %w", err)
 	}
 
-	// Only log when migration actually happens or on first connection
-	// log.Println("✅ Database connected successfully")
+	// Log successful connection only in DEBUG mode
+	if os.Getenv("DEBUG") == "true" {
+		fmt.Printf("✅ Database connected successfully (%s@%s:%d)\n", 
+			cfg.Database.User, cfg.Database.Host, cfg.Database.Port)
+	}
+	
 	return db, nil
 }
 
