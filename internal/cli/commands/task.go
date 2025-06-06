@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 	"github.com/terzigolu/josepshbrain-go/internal/cli/interactive"
 	"github.com/terzigolu/josepshbrain-go/pkg/models"
@@ -27,6 +29,9 @@ func NewTaskCmd(db *gorm.DB) *cobra.Command {
 	cmd.AddCommand(newTaskStartCmd(db))
 	cmd.AddCommand(newTaskDoneCmd(db))
 	cmd.AddCommand(newTaskInfoCmd(db))
+	cmd.AddCommand(newTaskProgressCmd(db))
+	cmd.AddCommand(newTaskDeleteCmd(db))
+	cmd.AddCommand(newTaskModifyCmd(db))
 
 	return cmd
 }
@@ -37,13 +42,11 @@ func newTaskCreateCmd(db *gorm.DB) *cobra.Command {
 		Use:     "create [description]",
 		Short:   "Create a new task",
 		Aliases: []string{"add"},
-		Args:    cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			isInteractive, _ := cmd.Flags().GetBool("interactive")
-			
-			var description string
-			var priority string = "M" // default medium
-			
+			priority, _ := cmd.Flags().GetString("priority")
+			description := ""
+
 			if isInteractive {
 				// Interactive mode
 				task, err := interactive.CreateTaskInteractive()
@@ -51,14 +54,18 @@ func newTaskCreateCmd(db *gorm.DB) *cobra.Command {
 					log.Fatalf("Interactive task creation failed: %v", err)
 				}
 				description = task.Description
-				priority = task.Priority
+				// Priority from interactive mode overrides flag
+				if task.Priority != "" {
+					priority = task.Priority
+				}
 			} else {
 				// Traditional CLI mode
-				if len(args) == 0 {
-					fmt.Println("❌ Description required (or use --interactive)")
+				if len(args) < 1 {
+					fmt.Println("❌ Description is required when not in interactive mode.")
+					fmt.Println("💡 Use 'jbraincli task create \"My new task\"' or 'jbraincli task create -i'")
 					return
 				}
-				description = args[0]
+				description = strings.Join(args, " ")
 			}
 			
 			// Get active project - require one to exist
@@ -75,7 +82,7 @@ func newTaskCreateCmd(db *gorm.DB) *cobra.Command {
 				ProjectID:   project.ID,
 				Description: description,
 				Status:      string(models.TaskStatusTODO),
-				Priority:    priority,
+				Priority:    strings.ToUpper(priority),
 				Progress:    0,
 			}
 
@@ -88,9 +95,18 @@ func newTaskCreateCmd(db *gorm.DB) *cobra.Command {
 		},
 	}
 	
-	// Add interactive flag
+	// Add interactive flag and priority flag
 	cmd.Flags().BoolP("interactive", "i", false, "Use interactive mode for task creation")
-	cmd.Args = cobra.MinimumNArgs(0) // Make args optional when using interactive
+	cmd.Flags().StringP("priority", "p", "M", "Set task priority (L, M, H)")
+	
+	// If not in interactive mode, description is required
+	cmd.Args = func(cmd *cobra.Command, args []string) error {
+		isInteractive, _ := cmd.Flags().GetBool("interactive")
+		if !isInteractive && len(args) < 1 {
+			return fmt.Errorf("requires a description when not in interactive mode")
+		}
+		return nil
+	}
 	
 	return cmd
 }
@@ -305,6 +321,85 @@ func newTaskInfoCmd(db *gorm.DB) *cobra.Command {
 			fmt.Println("================================================================================")
 		},
 	}
+}
+
+// task progress
+func newTaskProgressCmd(db *gorm.DB) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "progress [id] [percentage]",
+		Short: "Update task progress (0-100)",
+		Args:  cobra.RangeArgs(0, 2),
+		Run: func(cmd *cobra.Command, args []string) {
+			var task *models.Task
+			var progress int
+			var err error
+
+			isInteractive, _ := cmd.Flags().GetBool("interactive")
+
+			if isInteractive {
+				// Interactive Mode
+				var tasksToUpdate []models.Task
+				db.Where("status = ?", "IN_PROGRESS").Find(&tasksToUpdate)
+				if len(tasksToUpdate) == 0 {
+					fmt.Println("No 'IN_PROGRESS' tasks to update.")
+					return
+				}
+				task, err = interactive.SelectTask(tasksToUpdate, "Select task to update progress:")
+				if err != nil {
+					fmt.Println("Task selection cancelled.")
+					return
+				}
+
+				prompt := &survey.Input{Message: "Enter progress percentage (0-100):"}
+				var progressStr string
+				survey.AskOne(prompt, &progressStr, survey.WithValidator(survey.Required))
+				progress, err = strconv.Atoi(progressStr)
+				if err != nil || progress < 0 || progress > 100 {
+					fmt.Println("Invalid percentage. Please enter a number between 0 and 100.")
+					return
+				}
+			} else {
+				// Command-line Mode
+				if len(args) < 2 {
+					fmt.Println("Task ID and percentage are required in non-interactive mode.")
+					return
+				}
+				task, err = getTaskByIDPrefix(db, args[0])
+				if err != nil {
+					log.Fatalf(err.Error())
+				}
+				progress, err = strconv.Atoi(args[1])
+				if err != nil || progress < 0 || progress > 100 {
+					log.Fatalf("Invalid percentage. Must be a number between 0 and 100.")
+				}
+			}
+
+			// Update task progress
+			task.Progress = progress
+			if progress == 100 {
+				task.Status = "COMPLETED"
+			} else if progress > 0 && task.Status == "TODO" {
+				task.Status = "IN_PROGRESS"
+			}
+
+			if err := db.Save(task).Error; err != nil {
+				log.Fatalf("Failed to update task progress: %v", err)
+			}
+
+			fmt.Printf("✅ Updated progress for task: %s\n", truncateString(task.Description, 50))
+			fmt.Printf("   New Progress: %d%%, Status: %s\n", task.Progress, task.Status)
+		},
+	}
+	cmd.Flags().BoolP("interactive", "i", false, "Update progress interactively")
+	return cmd
+}
+
+func getTaskByIDPrefix(db *gorm.DB, idPrefix string) (*models.Task, error) {
+	var task models.Task
+	if err := db.Where("id::text LIKE ?", idPrefix+"%").First(&task).Error; err != nil {
+		return nil, fmt.Errorf("task with ID prefix '%s' not found", idPrefix)
+	}
+	return &task, nil
 }
 
 // displayTaskList shows tasks in a beautiful, responsive format
@@ -576,4 +671,150 @@ func getProgressBar(progress int, width int) string {
 	filled := (progress * width) / 100
 	bar := strings.Repeat("▓", filled) + strings.Repeat("░", width-filled)
 	return fmt.Sprintf("%s %d%%", bar, progress)
+}
+
+func newTaskDeleteCmd(db *gorm.DB) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "delete [id]",
+		Short:   "Delete a task",
+		Aliases: []string{"rm", "del"},
+		Args:    cobra.RangeArgs(0, 1),
+		Run: func(cmd *cobra.Command, args []string) {
+			var task *models.Task
+			var err error
+
+			isInteractive, _ := cmd.Flags().GetBool("interactive")
+
+			if isInteractive {
+				var allTasks []models.Task
+				db.Find(&allTasks)
+				if len(allTasks) == 0 {
+					fmt.Println("No tasks to delete.")
+					return
+				}
+				task, err = interactive.SelectTask(allTasks, "Select task to DELETE:")
+				if err != nil {
+					fmt.Println("Task selection cancelled.")
+					return
+				}
+			} else {
+				if len(args) < 1 {
+					fmt.Println("Task ID is required in non-interactive mode.")
+					return
+				}
+				task, err = getTaskByIDPrefix(db, args[0])
+				if err != nil {
+					log.Fatalf(err.Error())
+				}
+			}
+
+			// Confirmation
+			warningMessage := fmt.Sprintf("⚠️ You are about to permanently delete task '%s'.", truncateString(task.Description, 40))
+			confirmed, err := interactive.ConfirmAction(warningMessage, "This action cannot be undone.")
+			if err != nil || !confirmed {
+				fmt.Println("🚫 Delete operation cancelled.")
+				return
+			}
+
+			// Deletion
+			if err := db.Delete(task).Error; err != nil {
+				log.Fatalf("Failed to delete task: %v", err)
+			}
+
+			fmt.Printf("✅ Successfully deleted task: %s\n", task.Description)
+		},
+	}
+	cmd.Flags().BoolP("interactive", "i", false, "Delete a task interactively")
+	return cmd
+}
+
+func newTaskModifyCmd(db *gorm.DB) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "modify [id]",
+		Short:   "Modify a task's attributes",
+		Aliases: []string{"update", "edit"},
+		Args:    cobra.RangeArgs(0, 1),
+		Run: func(cmd *cobra.Command, args []string) {
+			isInteractive, _ := cmd.Flags().GetBool("interactive")
+			newDesc, _ := cmd.Flags().GetString("description")
+			newPriority, _ := cmd.Flags().GetString("priority")
+			newStatus, _ := cmd.Flags().GetString("status")
+
+			var task *models.Task
+			var err error
+
+			if isInteractive {
+				var allTasks []models.Task
+				db.Order("updated_at desc").Find(&allTasks)
+				task, err = interactive.SelectTask(allTasks, "Select task to modify:")
+				if err != nil {
+					fmt.Println("Task selection cancelled.")
+					return
+				}
+				// Now, let's get the modifications interactively
+				if newDesc == "" {
+					prompt := &survey.Input{Message: "New description (leave blank to keep current):", Default: task.Description}
+					survey.AskOne(prompt, &newDesc)
+				}
+				if newPriority == "" {
+					prompt := &survey.Select{
+						Message: "New priority (leave blank to keep current):",
+						Options: []string{"", "H", "M", "L"},
+						Default: task.Priority,
+					}
+					survey.AskOne(prompt, &newPriority)
+				}
+				if newStatus == "" {
+					prompt := &survey.Select{
+						Message: "New status (leave blank to keep current):",
+						Options: []string{"", "TODO", "IN_PROGRESS", "IN_REVIEW", "COMPLETED"},
+						Default: task.Status,
+					}
+					survey.AskOne(prompt, &newStatus)
+				}
+
+			} else {
+				if len(args) < 1 {
+					fmt.Println("Task ID is required for non-interactive modification.")
+					return
+				}
+				task, err = getTaskByIDPrefix(db, args[0])
+				if err != nil {
+					log.Fatalf(err.Error())
+				}
+			}
+
+			// Apply modifications
+			modified := false
+			if newDesc != "" && newDesc != task.Description {
+				task.Description = newDesc
+				modified = true
+			}
+			if newPriority != "" && newPriority != task.Priority {
+				task.Priority = newPriority
+				modified = true
+			}
+			if newStatus != "" && newStatus != task.Status {
+				task.Status = newStatus
+				modified = true
+			}
+
+			if !modified {
+				fmt.Println("No changes specified. Task not modified.")
+				return
+			}
+
+			if err := db.Save(task).Error; err != nil {
+				log.Fatalf("Failed to modify task: %v", err)
+			}
+			fmt.Printf("✅ Successfully modified task: %s\n", truncateString(task.Description, 50))
+		},
+	}
+
+	cmd.Flags().BoolP("interactive", "i", false, "Modify a task interactively")
+	cmd.Flags().StringP("description", "d", "", "New task description")
+	cmd.Flags().StringP("priority", "p", "", "New priority (H, M, L)")
+	cmd.Flags().StringP("status", "s", "", "New status (TODO, IN_PROGRESS, etc.)")
+
+	return cmd
 } 

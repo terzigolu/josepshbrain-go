@@ -1,15 +1,15 @@
 package commands
 
 import (
-	"bufio"
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/terzigolu/josepshbrain-go/internal/cli/interactive"
 	"github.com/terzigolu/josepshbrain-go/pkg/models"
+	"golang.org/x/term"
 	"gorm.io/gorm"
 )
 
@@ -25,7 +25,7 @@ func NewProjectCmd(db *gorm.DB) *cobra.Command {
 	cmd.AddCommand(newProjectInitCmd(db))
 	cmd.AddCommand(newProjectUseCmd(db))
 	cmd.AddCommand(newProjectListCmd(db))
-	cmd.AddCommand(newProjectSelectCmd(db))
+	cmd.AddCommand(newProjectDeleteCmd(db))
 
 	return cmd
 }
@@ -72,67 +72,83 @@ func newProjectInitCmd(db *gorm.DB) *cobra.Command {
 
 // project use - set active project or show current
 func newProjectUseCmd(db *gorm.DB) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "use [name]",
 		Short: "Set active project or show current active project",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if len(args) == 0 {
-				// Show current active project
-				var activeProject models.Project
-				result := db.Where("is_active = ? AND deleted_at IS NULL", true).First(&activeProject)
-				if result.Error != nil {
-					fmt.Println("❌ No active project found")
-					fmt.Println("💡 Use 'jbraincli project init <n>' to create a project")
-					fmt.Println("💡 Or use 'jbraincli project select' for interactive selection")
+			isInteractive, _ := cmd.Flags().GetBool("interactive")
+
+			if isInteractive {
+				// Interactive mode
+				projects, err := getAllProjects(db)
+				if err != nil {
+					log.Fatalf("Failed to fetch projects for interactive selection: %v", err)
+				}
+				if len(projects) == 0 {
+					fmt.Println("No projects to select. Use 'project init' to create one.")
 					return
 				}
-				fmt.Printf("📋 Active project: %s\n", activeProject.Name)
-				if activeProject.Description != nil {
-					fmt.Printf("📝 Description: %s\n", *activeProject.Description)
+				selectedProject, err := interactive.SelectProject(projects, "Select project to activate:")
+				if err != nil {
+					// User probably cancelled (Ctrl+C)
+					fmt.Println("Project selection cancelled.")
+					return
 				}
-				fmt.Printf("🆔 ID: %s\n", activeProject.ID.String())
+				activateProject(db, selectedProject.Name)
 				return
 			}
 
-			projectName := args[0]
-
-			// Find the project
-			var project models.Project
-			result := db.Where("name = ? AND deleted_at IS NULL", projectName).First(&project)
-			if result.Error != nil {
-				fmt.Printf("❌ Project '%s' not found\n", projectName)
-				fmt.Println("💡 Use 'jbraincli project list' to see available projects")
-				fmt.Println("💡 Or use 'jbraincli project select' for interactive selection")
+			if len(args) == 0 {
+				// Show current active project
+				showActiveProject(db)
 				return
 			}
 
-			// Deactivate all projects first
-			if err := db.Model(&models.Project{}).Where("deleted_at IS NULL").Update("is_active", false).Error; err != nil {
-				log.Fatalf("Failed to deactivate projects: %v", err)
-			}
-
-			// Activate the selected project
-			project.IsActive = true
-			if err := db.Save(&project).Error; err != nil {
-				log.Fatalf("Failed to activate project: %v", err)
-			}
-
-			fmt.Printf("✅ Activated project: %s\n", projectName)
+			// Activate by name
+			activateProject(db, args[0])
 		},
 	}
+
+	cmd.Flags().BoolP("interactive", "i", false, "Select project interactively")
+	return cmd
 }
 
-// project select - interactive project selection
-func newProjectSelectCmd(db *gorm.DB) *cobra.Command {
-	return &cobra.Command{
-		Use:     "select",
-		Short:   "Interactively select and activate a project",
-		Aliases: []string{"choose"},
-		Run: func(cmd *cobra.Command, args []string) {
-			selectProjectInteractively(db)
-		},
+func getAllProjects(db *gorm.DB) ([]models.Project, error) {
+	var projects []models.Project
+	err := db.Order("name asc").Find(&projects).Error
+	return projects, err
+}
+
+func showActiveProject(db *gorm.DB) {
+	var activeProject models.Project
+	result := db.Where("is_active = ?", true).First(&activeProject)
+	if result.Error != nil {
+		fmt.Println("❌ No active project found.")
+		fmt.Println("💡 Use 'jbraincli project use <name>' or 'jbraincli project use -i'")
+		return
 	}
+	fmt.Printf("🎯 Active project: %s\n", activeProject.Name)
+}
+
+func activateProject(db *gorm.DB, projectName string) {
+	var project models.Project
+	result := db.Where("name = ?", projectName).First(&project)
+	if result.Error != nil {
+		fmt.Printf("❌ Project '%s' not found.\n", projectName)
+		return
+	}
+
+	// Deactivate all projects
+	db.Model(&models.Project{}).Where("is_active = ?", true).Update("is_active", false)
+
+	// Activate the selected one
+	project.IsActive = true
+	if err := db.Save(&project).Error; err != nil {
+		log.Fatalf("Failed to activate project '%s': %v", projectName, err)
+	}
+
+	fmt.Printf("✅ Activated project: %s\n", projectName)
 }
 
 // project list - list all projects
@@ -142,121 +158,108 @@ func newProjectListCmd(db *gorm.DB) *cobra.Command {
 		Short:   "List all projects",
 		Aliases: []string{"ls"},
 		Run: func(cmd *cobra.Command, args []string) {
-			interactive, _ := cmd.Flags().GetBool("interactive")
-			if interactive {
-				selectProjectInteractively(db)
-				return
-			}
-			
 			var projects []models.Project
-			if err := db.Where("deleted_at IS NULL").Find(&projects).Error; err != nil {
+			if err := db.Order("created_at desc").Find(&projects).Error; err != nil {
 				log.Fatalf("Failed to fetch projects: %v", err)
 			}
 
 			if len(projects) == 0 {
-				fmt.Println("📋 No projects found. Create one with 'jbraincli project init <n>'")
+				fmt.Println("📋 No projects found. Create one with 'jbraincli project init <name>'")
 				return
 			}
 
-			fmt.Println("📋 Project List:")
-			fmt.Println("┌─────────────────────────────────────────┬───────────────────────────┬──────────┬────────────────────────┐")
-			fmt.Println("│ ID                                      │ Name                      │ Active   │ Description            │")
-			fmt.Println("├─────────────────────────────────────────┼───────────────────────────┼──────────┼────────────────────────┤")
-
-			for _, project := range projects {
-				activeStatus := "❌"
-				if project.IsActive {
-					activeStatus = "✅"
-				}
-				
-				description := ""
-				if project.Description != nil {
-					description = truncateString(*project.Description, 20)
-				}
-
-				fmt.Printf("│ %-39s │ %-25s │ %-8s │ %-22s │\n",
-					project.ID.String()[:8]+"...",
-					truncateString(project.Name, 25),
-					activeStatus,
-					description)
-			}
-			fmt.Println("└─────────────────────────────────────────┴───────────────────────────┴──────────┴────────────────────────┘")
-			fmt.Println()
-			fmt.Println("💡 Use 'jbraincli project select' for interactive selection")
+			displayProjectList(projects)
 		},
 	}
-	
-	cmd.Flags().BoolP("interactive", "i", false, "Interactive project selection")
 	return cmd
 }
 
-// selectProjectInteractively shows an interactive menu for project selection
-func selectProjectInteractively(db *gorm.DB) {
-	var projects []models.Project
-	if err := db.Where("deleted_at IS NULL").Find(&projects).Error; err != nil {
-		log.Fatalf("Failed to fetch projects: %v", err)
-	}
-
-	if len(projects) == 0 {
-		fmt.Println("📋 No projects found. Create one with 'jbraincli project init <n>'")
-		return
-	}
-
-	fmt.Println("🎯 Select a project to activate:")
-	fmt.Println()
-	
-	// Show numbered list
-	for i, project := range projects {
-		activeStatus := ""
-		if project.IsActive {
-			activeStatus = " (current)"
-		}
-		
-		fmt.Printf("  %d) %s%s\n", i+1, project.Name, activeStatus)
-		if project.Description != nil && *project.Description != "" {
-			fmt.Printf("     📝 %s\n", *project.Description)
-		}
-	}
-	
-	fmt.Println()
-	fmt.Printf("Enter number (1-%d) or 'q' to quit: ", len(projects))
-	
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
+func displayProjectList(projects []models.Project) {
+	width, _, err := term.GetSize(int(os.Stdout.Fd()))
 	if err != nil {
-		fmt.Printf("❌ Error reading input: %v\n", err)
-		return
-	}
-	
-	input = strings.TrimSpace(input)
-	
-	if input == "q" || input == "quit" {
-		fmt.Println("👋 Selection cancelled")
-		return
-	}
-	
-	// Parse number
-	num, err := strconv.Atoi(input)
-	if err != nil || num < 1 || num > len(projects) {
-		fmt.Printf("❌ Invalid selection. Please enter a number between 1 and %d\n", len(projects))
-		return
-	}
-	
-	selectedProject := projects[num-1]
-	
-	// Deactivate all projects first
-	if err := db.Model(&models.Project{}).Where("deleted_at IS NULL").Update("is_active", false).Error; err != nil {
-		log.Fatalf("Failed to deactivate projects: %v", err)
+		width = 80 // default
 	}
 
-	// Activate the selected project
-	selectedProject.IsActive = true
-	if err := db.Save(&selectedProject).Error; err != nil {
-		log.Fatalf("Failed to activate project: %v", err)
+	fmt.Println("🏢 Project List:")
+
+	// Column widths
+	nameWidth := 25
+	descWidth := 40
+	if width > 120 {
+		nameWidth = 30
+		descWidth = width - nameWidth - 25 // Adjust for other columns
 	}
 
-	fmt.Printf("✅ Activated project: %s\n", selectedProject.Name)
-	fmt.Printf("🆔 ID: %s\n", selectedProject.ID.String())
+	// Header
+	fmt.Printf("┌─%s─┬─%s─┬─%s─┐\n", strings.Repeat("─", nameWidth), strings.Repeat("─", descWidth), "──────────")
+	fmt.Printf("│ %-*s │ %-*s │ %-8s │\n", nameWidth, "PROJECT NAME", descWidth, "DESCRIPTION", "ACTIVE")
+	fmt.Printf("├─%s─┼─%s─┼─%s─┤\n", strings.Repeat("─", nameWidth), strings.Repeat("─", descWidth), "──────────")
+
+	for _, p := range projects {
+		activeIcon := "  "
+		if p.IsActive {
+			activeIcon = "🎯"
+		}
+
+		desc := ""
+		if p.Description != nil {
+			desc = *p.Description
+		}
+
+		fmt.Printf("│ %-*s │ %-*s │    %-6s │\n",
+			nameWidth, truncateString(p.Name, nameWidth),
+			descWidth, truncateString(desc, descWidth),
+			activeIcon)
+	}
+
+	fmt.Printf("└─%s─┴─%s─┴─%s─┘\n", strings.Repeat("─", nameWidth), strings.Repeat("─", descWidth), "──────────")
+	fmt.Printf("\n💡 To switch projects, use 'jbraincli project use <name>'\n")
+}
+
+func newProjectDeleteCmd(db *gorm.DB) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "delete [name]",
+		Short:   "Delete a project and all its associated tasks",
+		Aliases: []string{"rm", "del"},
+		Args:    cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			projectName := args[0]
+
+			// Find the project
+			var project models.Project
+			if err := db.Where("name = ?", projectName).First(&project).Error; err != nil {
+				fmt.Printf("❌ Project '%s' not found.\n", projectName)
+				return
+			}
+
+			// Count associated tasks
+			var taskCount int64
+			db.Model(&models.Task{}).Where("project_id = ?", project.ID).Count(&taskCount)
+
+			// Confirmation prompt
+			warningMessage := fmt.Sprintf("⚠️ You are about to delete the project '%s'.", projectName)
+			details := fmt.Sprintf("This will permanently delete the project and its %d associated task(s). This action cannot be undone.", taskCount)
+
+			confirmed, err := interactive.ConfirmAction(warningMessage, details)
+			if err != nil || !confirmed {
+				fmt.Println("🚫 Delete operation cancelled.")
+				return
+			}
+
+			// Perform deletion
+			if err := db.Delete(&project).Error; err != nil {
+				log.Fatalf("❌ Failed to delete project '%s': %v", projectName, err)
+			}
+
+			fmt.Printf("✅ Successfully deleted project '%s' and its %d tasks.\n", projectName, taskCount)
+
+			// If the deleted project was active, ensure no project is active
+			if project.IsActive {
+				fmt.Println("💡 The active project was deleted. Use 'jbraincli project use' to select a new one.")
+			}
+		},
+	}
+	return cmd
 }
 
  

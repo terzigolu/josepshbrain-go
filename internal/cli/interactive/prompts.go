@@ -19,9 +19,9 @@ func SelectTask(tasks []models.Task, message string) (*models.Task, error) {
 	taskMap := make(map[string]*models.Task)
 	
 	for i, task := range tasks {
-		shortID := task.ID.String()[:8]
-		status := getStatusIcon(task.Status)
-		priority := getPriorityIcon(task.Priority)
+		shortID := task.ID[:8]
+		status := getStatusIcon(string(task.Status))
+		priority := getPriorityIcon(string(task.Priority))
 		option := fmt.Sprintf("%s %s %s - %s", priority, status, shortID, task.Description)
 		options[i] = option
 		taskMap[option] = &tasks[i]
@@ -42,6 +42,42 @@ func SelectTask(tasks []models.Task, message string) (*models.Task, error) {
 	return taskMap[selected], nil
 }
 
+// SelectMemory prompts user to select a memory from a list
+func SelectMemory(memories []models.MemoryItem, message string) (*models.MemoryItem, error) {
+	if len(memories) == 0 {
+		return nil, fmt.Errorf("no memories available")
+	}
+
+	// Build options with format: "shortID - content preview"
+	options := make([]string, len(memories))
+	memoryMap := make(map[string]*models.MemoryItem)
+	
+	for i, memory := range memories {
+		shortID := memory.ID.String()[:8]
+		contentPreview := memory.Content
+		if len(contentPreview) > 60 {
+			contentPreview = contentPreview[:57] + "..."
+		}
+		option := fmt.Sprintf("🧠 %s - %s", shortID, contentPreview)
+		options[i] = option
+		memoryMap[option] = &memories[i]
+	}
+
+	prompt := &survey.Select{
+		Message: message,
+		Options: options,
+		PageSize: 10,
+	}
+
+	var selected string
+	err := survey.AskOne(prompt, &selected)
+	if err != nil {
+		return nil, err
+	}
+
+	return memoryMap[selected], nil
+}
+
 // SelectProject prompts user to select a project
 func SelectProject(projects []models.Project, message string) (*models.Project, error) {
 	if len(projects) == 0 {
@@ -50,16 +86,20 @@ func SelectProject(projects []models.Project, message string) (*models.Project, 
 
 	options := make([]string, len(projects))
 	projectMap := make(map[string]*models.Project)
-	
+
 	for i, project := range projects {
-		option := fmt.Sprintf("%s - %s", project.Name, project.Description)
+		desc := ""
+		if project.Description != nil {
+			desc = *project.Description
+		}
+		option := fmt.Sprintf("%s - %s", project.Name, desc)
 		options[i] = option
 		projectMap[option] = &projects[i]
 	}
 
 	prompt := &survey.Select{
-		Message: message,
-		Options: options,
+		Message:  message,
+		Options:  options,
 		PageSize: 10,
 	}
 
