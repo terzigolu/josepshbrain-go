@@ -1,0 +1,20 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Binaries
+jbraincli-*
+*.exe
+*.out
+
+# Go build cache
+/vendor/
+/pkg/
+*.sum
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*~ 
