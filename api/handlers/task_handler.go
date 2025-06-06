@@ -2,40 +2,63 @@ package handlers
 
 import (
 	"net/http"
-	"time"
+	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/terzigolu/josepshbrain-go/api/database"
 	"github.com/terzigolu/josepshbrain-go/api/models"
+	"github.com/terzigolu/josepshbrain-go/api/repository"
+	"github.com/terzigolu/josepshbrain-go/api/utils"
 )
 
-// CreateTaskInput DTO for creating a new task
-type CreateTaskInput struct {
-	Description string `json:"description" binding:"required"`
-	ProjectID   string `json:"project_id" binding:"required"`
-	Priority    string `json:"priority"`
+type TaskHandler struct {
+	repo repository.TaskRepository
 }
 
-// CreateTask creates a new task in the database.
-func CreateTask(c *gin.Context) {
-	var input CreateTaskInput
-	if err := c.ShouldBindJSON(&input); err != nil {
+func NewTaskHandler(repo repository.TaskRepository) *TaskHandler {
+	return &TaskHandler{repo: repo}
+}
+
+// ListTasks godoc
+// @Summary List all tasks
+// @Description Get a list of all tasks, optionally filtered by status.
+// @Tags tasks
+// @Produce json
+// @Param status query string false "Filter by status (e.g., 'TODO', 'IN_PROGRESS')"
+// @Success 200 {array} models.Task
+// @Router /tasks [get]
+func (h *TaskHandler) ListTasks(c *gin.Context) {
+	status := c.Query("status")
+	tasks, err := h.repo.GetTasks(status)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve tasks"})
+		return
+	}
+	c.JSON(http.StatusOK, tasks)
+}
+
+// CreateTask godoc
+// @Summary Create a new task
+// @Description Creates a new task with the provided data.
+// @Tags tasks
+// @Accept json
+// @Produce json
+// @Param task body models.CreateTaskDTO true "Task to create"
+// @Success 201 {object} models.Task
+// @Router /tasks [post]
+func (h *TaskHandler) CreateTask(c *gin.Context) {
+	var createTaskDTO models.CreateTaskDTO
+	if err := c.ShouldBindJSON(&createTaskDTO); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	task := models.Task{
-		Description: input.Description,
-		ProjectID:   input.ProjectID,
-		Status:      models.TaskStatusTODO,
-		Priority:    NormalizePriority(input.Priority),
+	if createTaskDTO.Title == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Title cannot be empty"})
+		return
 	}
 
-	if input.Priority == "" {
-		task.Priority = models.PriorityMedium
-	}
-
-	if err := database.DB.Create(&task).Error; err != nil {
+	task, err := h.repo.CreateTask(createTaskDTO)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create task"})
 		return
 	}
@@ -43,151 +66,103 @@ func CreateTask(c *gin.Context) {
 	c.JSON(http.StatusCreated, task)
 }
 
-// GetTask retrieves a single task by its ID.
-func GetTask(c *gin.Context) {
+func (h *TaskHandler) GetTask(c *gin.Context) {
 	id := c.Param("id")
-	var task models.Task
 
-	if err := database.DB.Preload("Annotations").First(&task, "id::text LIKE ?", id+"%").Error; err != nil {
+	task, err := h.repo.GetTaskByID(id)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
 		return
 	}
-
 	c.JSON(http.StatusOK, task)
 }
 
-// UpdateTaskInput DTO for updating a task
-type UpdateTaskInput struct {
-	Description *string `json:"description"`
-	Priority    *string `json:"priority"`
-	Progress    *int    `json:"progress"`
-}
-
-// UpdateTask updates an existing task.
-func UpdateTask(c *gin.Context) {
+func (h *TaskHandler) UpdateTask(c *gin.Context) {
 	id := c.Param("id")
-	var task models.Task
-	if err := database.DB.First(&task, "id::text LIKE ?", id+"%").Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
-		return
-	}
 
-	var input UpdateTaskInput
-	if err := c.ShouldBindJSON(&input); err != nil {
+	var taskUpdates models.UpdateTaskDTO
+	if err := c.ShouldBindJSON(&taskUpdates); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	if input.Description != nil {
-		task.Description = *input.Description
-	}
-	if input.Priority != nil {
-		task.Priority = NormalizePriority(*input.Priority)
-	}
-	if input.Progress != nil {
-		task.Progress = *input.Progress
-	}
-
-	if err := database.DB.Save(&task).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update task"})
+	updatedTask, err := h.repo.UpdateTask(id, taskUpdates)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update task"})
+		}
 		return
 	}
 
-	c.JSON(http.StatusOK, task)
+	c.JSON(http.StatusOK, updatedTask)
 }
 
-// DeleteTask deletes a task from the database.
-func DeleteTask(c *gin.Context) {
+func (h *TaskHandler) DeleteTask(c *gin.Context) {
 	id := c.Param("id")
-	var task models.Task
-	if err := database.DB.First(&task, "id::text LIKE ?", id+"%").Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
+
+	err := h.repo.DeleteTask(id)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete task"})
+		}
 		return
 	}
 
-	if err := database.DB.Delete(&task).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete task"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Task deleted successfully"})
+	c.JSON(http.StatusNoContent, nil)
 }
 
-// SetTaskStatusInput DTO for updating a task's status
-type SetTaskStatusInput struct {
-	Status models.TaskStatus `json:"status" binding:"required"`
-}
-
-// SetTaskStatus updates the status of a task.
-func SetTaskStatus(c *gin.Context) {
-	id := c.Param("id")
-	var task models.Task
-	if err := database.DB.First(&task, "id::text LIKE ?", id+"%").Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
-		return
-	}
-
-	var input SetTaskStatusInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	task.Status = input.Status
-	// Optionally update completed_at or started_at timestamps
-	if input.Status == models.TaskStatusCompleted {
-		now := time.Now()
-		task.CompletedAt = &now
-	}
-
-	if err := database.DB.Save(&task).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update task status"})
-		return
-	}
-
-	c.JSON(http.StatusOK, task)
-}
-
-// CreateAnnotationInput DTO for adding an annotation
-type CreateAnnotationInput struct {
-	Content string `json:"content" binding:"required"`
-}
-
-// CreateAnnotation adds a new annotation to a task.
-func CreateAnnotation(c *gin.Context) {
+func (h *TaskHandler) CreateAnnotation(c *gin.Context) {
 	taskID := c.Param("id")
-	var task models.Task
-	if err := database.DB.First(&task, "id::text LIKE ?", taskID+"%").Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
-		return
-	}
 
-	var input CreateAnnotationInput
-	if err := c.ShouldBindJSON(&input); err != nil {
+	var annotationDTO models.CreateAnnotationDTO
+	if err := c.ShouldBindJSON(&annotationDTO); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	annotationDTO.TaskID = taskID // Ensure association
 
-	annotation := models.Annotation{
-		TaskID:  task.ID,
-		Content: input.Content,
+	if annotationDTO.Content == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Annotation content cannot be empty"})
+		return
 	}
 
-	if err := database.DB.Create(&annotation).Error; err != nil {
+	newAnnotation, err := h.repo.CreateAnnotation(annotationDTO)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create annotation"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, annotation)
+	c.JSON(http.StatusCreated, newAnnotation)
 }
 
-// ListTasks retrieves all tasks from the database.
-func ListTasks(c *gin.Context) {
-	var tasks []models.Task
-	if err := database.DB.Find(&tasks).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve tasks"})
+func (h *TaskHandler) SetTaskStatus(c *gin.Context) {
+	id := c.Param("id")
+	path := c.FullPath() // e.g., "/v1/tasks/:id/start"
+
+	var newStatus string
+	if strings.HasSuffix(path, "/start") {
+		newStatus = string(models.TaskStatusInProgress)
+	} else if strings.HasSuffix(path, "/done") {
+		newStatus = string(models.TaskStatusDone)
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status transition"})
 		return
 	}
 
-	c.JSON(http.StatusOK, tasks)
+	priority := utils.NormalizePriority(newStatus)
+	task, err := h.repo.UpdateTaskStatus(id, newStatus, priority)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update task status"})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, task)
 } 
