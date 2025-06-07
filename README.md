@@ -4,45 +4,47 @@
 
 ## 📦 Installation
 
-### Option 1: Homebrew (Recommended on macOS)
+### Option 1: One-Command Install (Recommended)
 
-This is the easiest way to install and get updates on macOS.
+**Prerequisites:** Install [GitHub CLI](https://cli.github.com) first.
 
+**Copy and paste this command:**
 ```bash
-# Add the private tap
-brew tap terzigolu/homebrew-tap
-
-# Install the CLI
-brew install jbraincli
+cd /tmp && ARCH=$(uname -m) && gh release download --repo terzigolu/josepshbrain-go --pattern "*$(uname -s)_${ARCH}.tar.gz" --clobber && tar -xzf josepshbrain-go_$(uname -s)_${ARCH}.tar.gz && sudo mv jbraincli /usr/local/bin/ && rm josepshbrain-go_*.tar.gz && echo "✅ jbraincli installed successfully!" && jbraincli --help
 ```
 
-> **Note:** Due to a known GitHub issue, direct download links for new releases can sometimes take 15-30 minutes to become active. If `brew install` fails with a 404 error, please wait a while and try again, or use the manual installation method below.
+This single command will:
+- Download the correct binary for your platform (macOS/Linux)
+- Extract the `jbraincli` binary
+- Install it to `/usr/local/bin/`
+- Clean up temporary files
+- Verify the installation
 
-### Option 2: Manual Installation (for all platforms)
+### Option 2: Homebrew (Currently Unavailable)
 
-This method uses the official GitHub CLI (`gh`) to download the correct release asset for your platform. It is the most reliable way to install if Homebrew fails or if you are not on macOS.
+> **Note:** Homebrew installation is currently unavailable because the repository is private. Homebrew requires public repositories to download release assets. We're working on making this available in the future.
 
-1.  **Install the GitHub CLI.** Follow the instructions at [cli.github.com](https://cli.github.com).
+### Option 2: Direct Binary Download
 
-2.  **Run the following command in your terminal:**
-    ```sh
-    # This script detects your OS/architecture, downloads the latest release, and moves it to /usr/local/bin
-    set -e
-    VERSION=$(curl -s "https://api.github.com/repos/terzigolu/josepshbrain-go/releases/latest" | grep -o '"tag_name": ".*"' | sed -e 's/"//g' -e 's/tag_name: //g')
-    OS=$(uname -s)
-    ARCH=$(uname -m)
-    if [ "$ARCH" = "x86_64" ]; then ARCH="amd64"; fi
-    TAR_FILE="jbraincli_${OS}_${ARCH}.tar.gz"
-    
-    echo "Downloading jbraincli ${VERSION} for ${OS}/${ARCH}..."
-    gh release download ${VERSION} --repo terzigolu/josepshbrain-go --pattern "${TAR_FILE}" --output "/tmp/${TAR_FILE}"
-    
-    echo "Extracting and installing..."
-    tar -xzf "/tmp/${TAR_FILE}" -C /tmp
-    sudo mv /tmp/jbraincli /usr/local/bin/jbraincli
-    
-    echo "jbraincli has been installed successfully!"
-    ```
+For users who prefer not to use the GitHub CLI, you can manually download the appropriate binary:
+
+1. **Visit the releases page:** [github.com/terzigolu/josepshbrain-go/releases](https://github.com/terzigolu/josepshbrain-go/releases)
+
+2. **Download the correct file for your platform:**
+   - macOS (Apple Silicon): `josepshbrain-go_Darwin_arm64.tar.gz`
+   - macOS (Intel): `josepshbrain-go_Darwin_x86_64.tar.gz`
+   - Linux (64-bit): `josepshbrain-go_Linux_x86_64.tar.gz`
+   - Windows (64-bit): `josepshbrain-go_Windows_x86_64.zip`
+
+3. **Extract and install:**
+   ```bash
+   # For macOS/Linux
+   tar -xzf josepshbrain-go_*.tar.gz
+   sudo mv jbraincli /usr/local/bin/
+   
+   # For Windows
+   # Extract the .zip file and move jbraincli.exe to a directory in your PATH
+   ```
 
 ### Option 3: Build from Source
 ```bash
@@ -424,19 +426,26 @@ This tool is designed for developers and AI agents who want powerful task manage
 ### For Maintainers
 ```bash
 # Create a new release
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.0.2
+git push origin v1.0.2
 
 # This triggers GitHub Actions to:
-# - Build binaries for all platforms
-# - Create GitHub release
-# - Update Homebrew formula automatically
+# - Build binaries for all platforms (Linux, macOS, Windows)
+# - Create GitHub release with automated changelog
+# - Upload assets: .tar.gz for Unix, .zip for Windows
 ```
 
+### Current Status
+- **✅ GitHub Releases**: Automated via GoReleaser + GitHub Actions
+- **✅ GitHub CLI Install**: Primary installation method (works immediately)
+- **✅ Direct Download**: Manual download from releases page
+- **✅ Source Build**: Clone and compile locally
+- **❌ Homebrew**: Unavailable (requires public repository)
+
 ### Installation Methods Available
-- **Homebrew**: `brew install terzigolu/homebrew-tap/jbraincli`
-- **Direct Download**: GitHub releases with pre-built binaries
-- **Source Build**: Clone and compile locally
+- **GitHub CLI**: `gh release download --repo terzigolu/josepshbrain-go ...` (Recommended)
+- **Direct Download**: [GitHub releases page](https://github.com/terzigolu/josepshbrain-go/releases)
+- **Source Build**: `git clone && make install`
 
 ---
 
