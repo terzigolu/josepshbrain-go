@@ -7,12 +7,20 @@ import (
 )
 
 const (
-	defaultApiURL      = "https://jbraincli-go-backend-production.up.railway.app"
 	configDirName      = ".jbrain"
 	configFileName     = "config.json"
+	DefaultApiURL      = "https://jbraincli-go-backend-production.up.railway.app"
+	DefaultAuthURL     = "https://jbraincli-go-backend-production.up.railway.app/auth"
+	V1ApiURL           = "https://jbraincli-go-backend-production.up.railway.app/v1"
 	activeProjectIDKey = "active_project_id"
 	apiURLKey          = "api_url"
 )
+
+// GetV1ApiURL returns the V1 API URL.
+func GetV1ApiURL() string {
+	// In a real app, you might read this from viper or another config manager
+	return V1ApiURL
+}
 
 // CliConfig holds the configuration for the CLI tool.
 type CliConfig struct {
@@ -59,7 +67,7 @@ func LoadCliConfig() (CliConfig, error) {
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		// Config file does not exist, create a default one.
 		defaultConfig := CliConfig{
-			ApiURL: defaultApiURL,
+			ApiURL: DefaultApiURL,
 		}
 		if err := SaveCliConfig(defaultConfig); err != nil {
 			return CliConfig{}, err
@@ -79,7 +87,7 @@ func LoadCliConfig() (CliConfig, error) {
 
 	// If ApiURL is missing from an existing config, set it to default.
 	if cfg.ApiURL == "" {
-		cfg.ApiURL = defaultApiURL
+		cfg.ApiURL = DefaultApiURL
 	}
 
 	return cfg, nil

@@ -4,25 +4,45 @@
 
 ## 📦 Installation
 
-### Option 1: Homebrew (Recommended)
+### Option 1: Homebrew (Recommended on macOS)
+
+This is the easiest way to install and get updates on macOS.
+
 ```bash
-# Add the tap and install
+# Add the private tap
 brew tap terzigolu/homebrew-tap
+
+# Install the CLI
 brew install jbraincli
-
-# Setup your account
-jbraincli setup register
 ```
 
-### Option 2: Direct Binary Download
-```bash
-# Download from GitHub releases
-curl -L https://github.com/terzigolu/josepshbrain-go/releases/latest/download/jbraincli_Darwin_x86_64.tar.gz | tar xz
-sudo mv jbraincli /usr/local/bin/
+> **Note:** Due to a known GitHub issue, direct download links for new releases can sometimes take 15-30 minutes to become active. If `brew install` fails with a 404 error, please wait a while and try again, or use the manual installation method below.
 
-# Setup your account
-jbraincli setup register
-```
+### Option 2: Manual Installation (for all platforms)
+
+This method uses the official GitHub CLI (`gh`) to download the correct release asset for your platform. It is the most reliable way to install if Homebrew fails or if you are not on macOS.
+
+1.  **Install the GitHub CLI.** Follow the instructions at [cli.github.com](https://cli.github.com).
+
+2.  **Run the following command in your terminal:**
+    ```sh
+    # This script detects your OS/architecture, downloads the latest release, and moves it to /usr/local/bin
+    set -e
+    VERSION=$(curl -s "https://api.github.com/repos/terzigolu/josepshbrain-go/releases/latest" | grep -o '"tag_name": ".*"' | sed -e 's/"//g' -e 's/tag_name: //g')
+    OS=$(uname -s)
+    ARCH=$(uname -m)
+    if [ "$ARCH" = "x86_64" ]; then ARCH="amd64"; fi
+    TAR_FILE="jbraincli_${OS}_${ARCH}.tar.gz"
+    
+    echo "Downloading jbraincli ${VERSION} for ${OS}/${ARCH}..."
+    gh release download ${VERSION} --repo terzigolu/josepshbrain-go --pattern "${TAR_FILE}" --output "/tmp/${TAR_FILE}"
+    
+    echo "Extracting and installing..."
+    tar -xzf "/tmp/${TAR_FILE}" -C /tmp
+    sudo mv /tmp/jbraincli /usr/local/bin/jbraincli
+    
+    echo "jbraincli has been installed successfully!"
+    ```
 
 ### Option 3: Build from Source
 ```bash

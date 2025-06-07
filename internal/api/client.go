@@ -13,6 +13,10 @@ import (
 	"github.com/terzigolu/josepshbrain-go/internal/models"
 )
 
+var (
+	baseURL = "https://jbraincli-go-backend-production.up.railway.app/v1"
+)
+
 type Client struct {
 	BaseURL    string
 	HTTPClient *http.Client
