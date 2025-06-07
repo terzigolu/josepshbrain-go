@@ -49,22 +49,6 @@ changelog:
       - '^docs:'
       - '^test:'
 
-# Homebrew formula generation
-brews:
-  - name: jbraincli
-    repository:
-      owner: terzigolu
-      name: homebrew-tap
-      branch: main
-    folder: Formula
-    homepage: "https://github.com/terzigolu/josepshbrain-go"
-    description: "JosephsBrain CLI - A powerful personal knowledge management tool"
-    license: "MIT"
-    test: |
-      system "#{bin}/jbraincli --help"
-    install: |
-      bin.install "jbraincli"
-
 # Release configuration
 release:
   draft: false
