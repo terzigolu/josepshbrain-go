@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	defaultApiURL      = "http://localhost:8080"
+	defaultApiURL      = "https://jbraincli-go-backend-production.up.railway.app"
 	configDirName      = ".jbrain"
 	configFileName     = "config.json"
 	activeProjectIDKey = "active_project_id"

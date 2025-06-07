@@ -11,7 +11,7 @@ import (
 	"github.com/terzigolu/josepshbrain-go/internal/models"
 )
 
-const BaseURL = "http://localhost:8080/v1"
+const BaseURL = "https://jbraincli-go-backend-production.up.railway.app/v1"
 
 type APIService struct {
 	client *http.Client

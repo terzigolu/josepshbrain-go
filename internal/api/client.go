@@ -23,7 +23,7 @@ type Client struct {
 func NewClient() *Client {
 	baseURL := os.Getenv("API_BASE_URL")
 	if baseURL == "" {
-		baseURL = "http://localhost:8080"
+		baseURL = "https://jbraincli-go-backend-production.up.railway.app"
 	}
 
 	// Load API key from config
