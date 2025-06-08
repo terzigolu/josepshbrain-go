@@ -103,23 +103,9 @@ func (c *Client) CreateProject(name, description string) (*models.Project, error
 		return nil, err
 	}
 
-	var response models.APIResponse
-	if err := json.Unmarshal(respBody, &response); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	if !response.Success {
-		return nil, fmt.Errorf("API error: %s", response.Error)
-	}
-
-	projectData, err := json.Marshal(response.Data)
-	if err != nil {
-		return nil, err
-	}
-
 	var project models.Project
-	if err := json.Unmarshal(projectData, &project); err != nil {
-		return nil, err
+	if err := json.Unmarshal(respBody, &project); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal project: %w", err)
 	}
 
 	return &project, nil
