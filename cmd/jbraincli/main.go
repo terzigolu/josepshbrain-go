@@ -29,10 +29,11 @@ func main() {
 			commands.NewConfigCommand(),
 			commands.NewGeminiKeyCommand(),
 			commands.NewAnalyzeCommand(),
+			commands.NewUICommand(),
 		},
 	}
 
 	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)
 	}
-} 
+}

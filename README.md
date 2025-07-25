@@ -72,6 +72,7 @@ Quick commands:
 - `jbraincli project create "My Project"` - Create a project
 - `jbraincli kanban` - View tasks in kanban board
 - `jbraincli remember "Important information"` - Store a memory
+- `jbraincli ui` - Launch interactive terminal interface
 
 ## 🔧 Development
 
