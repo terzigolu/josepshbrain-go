@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go:*)",
+      "Bash(make:*)",
+      "Bash(./jbraincli --version)",
+      "Bash(jbraincli --version)",
+      "Bash(jbraincli:*)",
+      "Bash(ls:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)"
+    ],
+    "deny": []
+  }
+}
