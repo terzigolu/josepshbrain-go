@@ -1,0 +1,71 @@
+# GoReleaser configuration for jbrain CLI
+version: 2
+
+project_name: jbrain
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: jbrain
+    main: ./cmd/jbraincli
+    binary: jbrain
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: jbrain
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+brews:
+  - name: jbrain
+    repository:
+      owner: terzigolu
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    folder: Formula
+    homepage: "https://josephsbrain.com"
+    description: "AI-powered task and memory management CLI for JosephsBrain"
+    license: "MIT"
+    install: |
+      bin.install "jbrain"
+    test: |
+      system "#{bin}/jbrain", "--version"
+
+release:
+  github:
+    owner: terzigolu
+    name: josepshbrain-go
+  draft: false
+  prerelease: auto
