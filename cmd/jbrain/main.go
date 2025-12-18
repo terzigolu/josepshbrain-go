@@ -30,6 +30,8 @@ func main() {
 			commands.NewAnnotateCmd(),
 			commands.NewTaskAnnotationsCmd(),
 			commands.NewContextCommand(),
+			commands.NewSubtaskCommand(),
+			commands.NewOverviewCommand(),
 			commands.NewMcpCommand(),
 			commands.NewConfigCommand(),
 			commands.NewGeminiKeyCommand(),
