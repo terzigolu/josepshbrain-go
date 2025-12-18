@@ -207,6 +207,16 @@ func (c *Client) ListTasks(projectID, status string) ([]models.Task, error) {
 		return nil, err
 	}
 
+	// Try wrapped response first (backend returns {tasks: [], total: N})
+	var wrappedResp struct {
+		Tasks []models.Task `json:"tasks"`
+		Total int           `json:"total"`
+	}
+	if err := json.Unmarshal(respBody, &wrappedResp); err == nil && wrappedResp.Tasks != nil {
+		return wrappedResp.Tasks, nil
+	}
+
+	// Fallback to direct array
 	var tasks []models.Task
 	if err := json.Unmarshal(respBody, &tasks); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
@@ -248,6 +258,16 @@ func (c *Client) ListTasksQuery(projectID string, status string, q string, prior
 		return nil, err
 	}
 
+	// Try wrapped response first (backend returns {tasks: [], total: N})
+	var wrappedResp struct {
+		Tasks []models.Task `json:"tasks"`
+		Total int           `json:"total"`
+	}
+	if err := json.Unmarshal(respBody, &wrappedResp); err == nil && wrappedResp.Tasks != nil {
+		return wrappedResp.Tasks, nil
+	}
+
+	// Fallback to direct array
 	var tasks []models.Task
 	if err := json.Unmarshal(respBody, &tasks); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)

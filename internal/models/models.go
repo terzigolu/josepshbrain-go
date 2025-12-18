@@ -8,13 +8,13 @@ import (
 
 // Project represents a project in the system
 type Project struct {
-	ID            uuid.UUID `json:"id"`
-	Name          string    `json:"name"`
-	Description   string    `json:"description"`
-	Configuration []byte    `json:"configuration,omitempty"`
-	IsActive      bool      `json:"is_active"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID            uuid.UUID              `json:"id"`
+	Name          string                 `json:"name"`
+	Description   string                 `json:"description"`
+	Configuration map[string]interface{} `json:"configuration,omitempty"`
+	IsActive      bool                   `json:"is_active"`
+	CreatedAt     time.Time              `json:"created_at"`
+	UpdatedAt     time.Time              `json:"updated_at"`
 }
 
 // Task represents a task in the system

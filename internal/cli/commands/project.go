@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -128,11 +127,9 @@ func projectShowCmd() *cli.Command {
 			fmt.Printf("Name:        %s\n", project.Name)
 			fmt.Printf("Description: %s\n", project.Description)
 			if project.Configuration != nil && len(project.Configuration) > 0 {
-				var prettyJSON bytes.Buffer
-				if err := json.Indent(&prettyJSON, project.Configuration, "", "  "); err == nil {
-					fmt.Printf("Configuration: \n%s\n", prettyJSON.String())
-				} else {
-					fmt.Printf("Configuration: %s\n", string(project.Configuration))
+				configJSON, err := json.MarshalIndent(project.Configuration, "", "  ")
+				if err == nil {
+					fmt.Printf("Configuration: \n%s\n", string(configJSON))
 				}
 			}
 			fmt.Printf("Created At:  %s\n", project.CreatedAt.Format("2006-01-02 15:04:05"))
