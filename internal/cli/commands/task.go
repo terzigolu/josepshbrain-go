@@ -26,6 +26,10 @@ func NewTaskCommand() *cli.Command {
 			taskCompleteCmd(),
 			taskDeleteCmd(),
 			taskElaborateCmd(),
+			taskDuplicateCmd(),
+			taskMoveCmd(),
+			taskNextCmd(),
+			taskProgressCmd(),
 		},
 	}
 }
@@ -375,6 +379,284 @@ func taskElaborateCmd() *cli.Command {
 
 			fmt.Printf("✅ Successfully elaborated on task %s and saved it as a new note.\n", taskID)
 			fmt.Printf("Use 'jbrain task show %s' to see the results.\n", taskID)
+			return nil
+		},
+	}
+}
+
+// taskDuplicateCmd duplicates a task with its tags and notes.
+func taskDuplicateCmd() *cli.Command {
+	return &cli.Command{
+		Name:      "duplicate",
+		Aliases:   []string{"dup", "copy"},
+		Usage:     "Duplicate a task (copies tags and notes, resets status to TODO)",
+		ArgsUsage: "[task-id]",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "title",
+				Aliases: []string{"t"},
+				Usage:   "New title for the duplicated task (optional)",
+			},
+		},
+		Action: func(c *cli.Context) error {
+			if c.NArg() == 0 {
+				return fmt.Errorf("task ID is required")
+			}
+			taskID := c.Args().First()
+			newTitle := c.String("title")
+
+			client := api.NewClient()
+
+			// Get original task
+			original, err := client.GetTask(taskID)
+			if err != nil {
+				fmt.Printf("Error getting task: %v\n", err)
+				return err
+			}
+
+			// Create new task with same properties
+			title := original.Title
+			if newTitle != "" {
+				title = newTitle
+			} else {
+				title = title + " (copy)"
+			}
+
+			newTask, err := client.CreateTask(
+				original.ProjectID.String(),
+				title,
+				original.Description,
+				original.Priority,
+			)
+			if err != nil {
+				fmt.Printf("Error creating duplicate task: %v\n", err)
+				return err
+			}
+
+			// Copy annotations
+			for _, ann := range original.Annotations {
+				_, _ = client.CreateAnnotation(newTask.ID.String(), ann.Content)
+			}
+
+			fmt.Printf("✅ Task duplicated successfully!\n")
+			fmt.Printf("Original: %s - %s\n", original.ID.String()[:8], original.Title)
+			fmt.Printf("New:      %s - %s\n", newTask.ID.String()[:8], newTask.Title)
+			return nil
+		},
+	}
+}
+
+// taskMoveCmd moves tasks to another project.
+func taskMoveCmd() *cli.Command {
+	return &cli.Command{
+		Name:      "move",
+		Usage:     "Move task(s) to another project",
+		ArgsUsage: "[task-ids...]",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:     "project",
+				Aliases:  []string{"p"},
+				Usage:    "Target project ID or name",
+				Required: true,
+			},
+		},
+		Action: func(c *cli.Context) error {
+			if c.NArg() == 0 {
+				return fmt.Errorf("at least one task ID is required")
+			}
+
+			targetProject := c.String("project")
+			if targetProject == "" {
+				return fmt.Errorf("target project is required (--project)")
+			}
+
+			taskIDs := c.Args().Slice()
+			client := api.NewClient()
+
+			// Resolve project name to ID if needed
+			projects, err := client.ListProjects()
+			if err != nil {
+				return fmt.Errorf("could not fetch projects: %w", err)
+			}
+
+			var projectID string
+			for _, p := range projects {
+				if p.ID.String() == targetProject || strings.HasPrefix(p.ID.String(), targetProject) || strings.EqualFold(p.Name, targetProject) {
+					projectID = p.ID.String()
+					break
+				}
+			}
+
+			if projectID == "" {
+				return fmt.Errorf("project '%s' not found", targetProject)
+			}
+
+			// Move each task
+			movedCount := 0
+			for _, taskID := range taskIDs {
+				updateData := map[string]interface{}{"project_id": projectID}
+				_, err := client.UpdateTask(taskID, updateData)
+				if err != nil {
+					fmt.Printf("⚠️  Failed to move task %s: %v\n", taskID[:8], err)
+					continue
+				}
+				movedCount++
+			}
+
+			fmt.Printf("✅ Moved %d/%d task(s) to project.\n", movedCount, len(taskIDs))
+			return nil
+		},
+	}
+}
+
+// taskNextCmd shows next tasks by priority.
+func taskNextCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "next",
+		Usage: "Show next tasks by priority (optimized for agents)",
+		Flags: []cli.Flag{
+			&cli.IntFlag{
+				Name:    "count",
+				Aliases: []string{"n"},
+				Usage:   "Number of tasks to show",
+				Value:   5,
+			},
+			&cli.StringFlag{
+				Name:    "project",
+				Aliases: []string{"p"},
+				Usage:   "Filter by project ID",
+			},
+		},
+		Action: func(c *cli.Context) error {
+			count := c.Int("count")
+			projectID := c.String("project")
+
+			client := api.NewClient()
+
+			if projectID == "" {
+				// Find active project
+				projects, err := client.ListProjects()
+				if err != nil {
+					return fmt.Errorf("could not fetch projects: %w", err)
+				}
+				for _, p := range projects {
+					if p.IsActive {
+						projectID = p.ID.String()
+						break
+					}
+				}
+			}
+
+			// Get all tasks
+			tasks, err := client.ListTasks(projectID, "")
+			if err != nil {
+				return fmt.Errorf("could not fetch tasks: %w", err)
+			}
+
+			// Filter pending tasks and calculate priority score
+			type scoredTask struct {
+				idx   int
+				score int
+			}
+			var scored []scoredTask
+			priorityMap := map[string]int{"H": 3, "M": 2, "L": 1}
+
+			for i, t := range tasks {
+				if t.Status == "TODO" || t.Status == "IN_PROGRESS" {
+					score := priorityMap[t.Priority]
+					if score == 0 {
+						score = 2 // Default to Medium
+					}
+					// IN_PROGRESS tasks get a boost
+					if t.Status == "IN_PROGRESS" {
+						score += 10
+					}
+					scored = append(scored, scoredTask{idx: i, score: score})
+				}
+			}
+
+			// Sort by score (descending)
+			for i := 0; i < len(scored)-1; i++ {
+				for j := i + 1; j < len(scored); j++ {
+					if scored[j].score > scored[i].score {
+						scored[i], scored[j] = scored[j], scored[i]
+					}
+				}
+			}
+
+			// Limit results
+			if len(scored) > count {
+				scored = scored[:count]
+			}
+
+			if len(scored) == 0 {
+				fmt.Println(" No pending tasks! You're all caught up.")
+				return nil
+			}
+
+			fmt.Printf(" Next %d task(s):\n", len(scored))
+			fmt.Println(strings.Repeat("-", 60))
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "#	ID	PRIORITY	STATUS	TITLE")
+
+			for i, s := range scored {
+				t := tasks[s.idx]
+				fmt.Fprintf(w, "%d	%s	%s	%s	%s\n",
+					i+1,
+					t.ID.String()[:8],
+					t.Priority,
+					t.Status,
+					truncateString(t.Title, 35))
+			}
+			w.Flush()
+			return nil
+		},
+	}
+}
+
+// taskProgressCmd updates task progress.
+func taskProgressCmd() *cli.Command {
+	return &cli.Command{
+		Name:      "progress",
+		Usage:     "Update task progress (0-100)",
+		ArgsUsage: "[task-id] [progress]",
+		Action: func(c *cli.Context) error {
+			if c.NArg() < 2 {
+				return fmt.Errorf("usage: jbrain task progress <task-id> <progress>")
+			}
+
+			taskID := c.Args().Get(0)
+			progressStr := c.Args().Get(1)
+
+			progress, err := strconv.Atoi(progressStr)
+			if err != nil || progress < 0 || progress > 100 {
+				return fmt.Errorf("progress must be a number between 0 and 100")
+			}
+
+			client := api.NewClient()
+
+			// First get the task to resolve short ID to full UUID
+			task, err := client.GetTask(taskID)
+			if err != nil {
+				fmt.Printf("Error finding task: %v\n", err)
+				return err
+			}
+
+			updateData := map[string]interface{}{"progress": progress}
+			task, err = client.UpdateTask(task.ID.String(), updateData)
+			if err != nil {
+				fmt.Printf("Error updating progress: %v\n", err)
+				return err
+			}
+
+			// Visual progress bar
+			filled := progress / 5
+			empty := 20 - filled
+			bar := strings.Repeat("█", filled) + strings.Repeat("░", empty)
+
+			fmt.Printf("📊 Task '%s' progress updated\n", truncateString(task.Title, 30))
+			fmt.Printf("   [%s] %d%%\n", bar, progress)
 			return nil
 		},
 	}
