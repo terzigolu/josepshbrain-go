@@ -4,12 +4,34 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
+	"syscall"
 
 	"github.com/terzigolu/josepshbrain-go/internal/api"
 	"github.com/terzigolu/josepshbrain-go/internal/config"
 	"github.com/urfave/cli/v2"
+	"golang.org/x/term"
 )
+
+const webURL = "https://josephsbrain.com"
+
+// openBrowser opens the specified URL in the default browser
+func openBrowser(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		return fmt.Errorf("unsupported platform")
+	}
+	return cmd.Start()
+}
 
 func NewSetupCommand() *cli.Command {
 	return &cli.Command{
@@ -17,105 +39,102 @@ func NewSetupCommand() *cli.Command {
 		Usage: "Configure the CLI with user authentication",
 		Subcommands: []*cli.Command{
 			{
-				Name:  "register",
-				Usage: "Register a new user account",
-				Action: func(c *cli.Context) error {
-					return handleUserRegistration()
-				},
-			},
-			{
-				Name:  "login",
-				Usage: "Login with existing user credentials",
+				Name:    "login",
+				Aliases: []string{"l"},
+				Usage:   "Login with your JosephsBrain account",
 				Action: func(c *cli.Context) error {
 					return handleUserLogin()
 				},
 			},
 			{
 				Name:  "api-key",
-				Usage: "Manually set API key (for existing users)",
+				Usage: "Manually set API key",
 				Action: func(c *cli.Context) error {
 					return handleManualAPIKey()
 				},
 			},
+			{
+				Name:  "status",
+				Usage: "Check current authentication status",
+				Action: func(c *cli.Context) error {
+					return handleAuthStatus()
+				},
+			},
+			{
+				Name:  "logout",
+				Usage: "Remove saved credentials",
+				Action: func(c *cli.Context) error {
+					return handleLogout()
+				},
+			},
 		},
 		Action: func(c *cli.Context) error {
-			// Default action - show help
-			return cli.ShowCommandHelp(c, "setup")
+			// Default action - interactive setup
+			return handleInteractiveSetup()
 		},
 	}
-}
-
-func handleUserRegistration() error {
-	reader := bufio.NewReader(os.Stdin)
-
-	fmt.Print("Enter your first name: ")
-	firstName, err := reader.ReadString('\n')
-	if err != nil {
-		return fmt.Errorf("could not read first name: %w", err)
-	}
-	firstName = strings.TrimSpace(firstName)
-
-	fmt.Print("Enter your last name: ")
-	lastName, err := reader.ReadString('\n')
-	if err != nil {
-		return fmt.Errorf("could not read last name: %w", err)
-	}
-	lastName = strings.TrimSpace(lastName)
-
-	fmt.Print("Enter your email: ")
-	email, err := reader.ReadString('\n')
-	if err != nil {
-		return fmt.Errorf("could not read email: %w", err)
-	}
-	email = strings.TrimSpace(email)
-
-	fmt.Print("Enter your password: ")
-	password, err := reader.ReadString('\n')
-	if err != nil {
-		return fmt.Errorf("could not read password: %w", err)
-	}
-	password = strings.TrimSpace(password)
-
-	// Create API client and register user
-	client := api.NewClient()
-	apiKey, err := client.RegisterUser(firstName, lastName, email, password)
-	if err != nil {
-		return fmt.Errorf("registration failed: %w", err)
-	}
-
-	// Save API key to config
-	cfg := &config.Config{APIKey: apiKey}
-	err = config.SaveConfig(cfg)
-	if err != nil {
-		return fmt.Errorf("could not save config: %w", err)
-	}
-
-	fmt.Println("✅ User registered successfully!")
-	fmt.Printf("✅ API Key saved: %s\n", apiKey)
-	return nil
 }
 
 func handleUserLogin() error {
 	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Print("Enter your email: ")
+	fmt.Println()
+	fmt.Println("🔐 JosephsBrain Login")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println()
+
+	fmt.Print("Email: ")
 	email, err := reader.ReadString('\n')
 	if err != nil {
 		return fmt.Errorf("could not read email: %w", err)
 	}
 	email = strings.TrimSpace(email)
 
-	fmt.Print("Enter your password: ")
-	password, err := reader.ReadString('\n')
-	if err != nil {
-		return fmt.Errorf("could not read password: %w", err)
+	if email == "" {
+		return fmt.Errorf("email is required")
 	}
-	password = strings.TrimSpace(password)
+
+	// Secure password input (hidden)
+	fmt.Print("Password: ")
+	passwordBytes, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Println() // New line after hidden input
+	if err != nil {
+		// Fallback to regular input if terminal not available
+		password, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("could not read password: %w", err)
+		}
+		passwordBytes = []byte(strings.TrimSpace(password))
+	}
+	password := strings.TrimSpace(string(passwordBytes))
+
+	if password == "" {
+		return fmt.Errorf("password is required")
+	}
+
+	fmt.Println()
+	fmt.Print("🔄 Logging in...")
 
 	// Create API client and login user
 	client := api.NewClient()
 	apiKey, err := client.LoginUser(email, password)
 	if err != nil {
+		fmt.Println(" ❌")
+		fmt.Println()
+		fmt.Println("Login failed. Please check your credentials.")
+		fmt.Println()
+		fmt.Print("Don't have an account? Open browser to register? (Y/n): ")
+		reader := bufio.NewReader(os.Stdin)
+		answer, _ := reader.ReadString('\n')
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		if answer == "" || answer == "y" || answer == "yes" {
+			fmt.Println()
+			fmt.Println("🌐 Opening browser...")
+			browserErr := openBrowser(webURL + "/login")
+			if browserErr != nil {
+				fmt.Printf("Please visit: %s/login\n", webURL)
+			}
+		}
 		return fmt.Errorf("login failed: %w", err)
 	}
 
@@ -126,24 +145,44 @@ func handleUserLogin() error {
 		return fmt.Errorf("could not save config: %w", err)
 	}
 
+	fmt.Println(" ✅")
+	fmt.Println()
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("✅ Login successful!")
-	fmt.Printf("✅ API Key saved: %s\n", apiKey)
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println()
+	fmt.Println("You can now use jbrain commands:")
+	fmt.Println("  jbrain projects      - List your projects")
+	fmt.Println("  jbrain list          - List your tasks")
+	fmt.Println("  jbrain task \"...\"    - Create a new task")
+	fmt.Println()
 	return nil
 }
 
 func handleManualAPIKey() error {
 	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Print("Enter your API Key: ")
+	fmt.Println()
+	fmt.Println("🔑 Manual API Key Setup")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println()
+	fmt.Println("You can find your API key in your account settings at:")
+	fmt.Printf("  %s/settings\n", webURL)
+	fmt.Println()
+
+	fmt.Print("API Key: ")
 	apiKey, err := reader.ReadString('\n')
 	if err != nil {
 		return fmt.Errorf("could not read API key: %w", err)
 	}
 	apiKey = strings.TrimSpace(apiKey)
 
+	if apiKey == "" {
+		return fmt.Errorf("API key is required")
+	}
+
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		// If config doesn't exist, a new one will be created.
 		cfg = &config.Config{}
 	}
 
@@ -154,6 +193,126 @@ func handleManualAPIKey() error {
 		return fmt.Errorf("could not save config: %w", err)
 	}
 
-	fmt.Println("✅ Configuration saved successfully!")
+	fmt.Println()
+	fmt.Println("✅ API Key saved successfully!")
 	return nil
+}
+
+func handleAuthStatus() error {
+	cfg, err := config.LoadConfig()
+	if err != nil || cfg.APIKey == "" {
+		fmt.Println()
+		fmt.Println("❌ Not authenticated")
+		fmt.Println()
+		fmt.Println("To login, run:")
+		fmt.Println("  jbrain setup login")
+		fmt.Println()
+		fmt.Println("Don't have an account? Register at:")
+		fmt.Printf("  %s\n", webURL)
+		fmt.Println()
+		return nil
+	}
+
+	// Mask API key for display
+	maskedKey := cfg.APIKey
+	if len(maskedKey) > 12 {
+		maskedKey = maskedKey[:8] + "..." + maskedKey[len(maskedKey)-4:]
+	}
+
+	fmt.Println()
+	fmt.Println("✅ Authenticated")
+	fmt.Println("━━━━━━━━━━━━━━━━")
+	fmt.Printf("API Key: %s\n", maskedKey)
+	fmt.Println()
+	return nil
+}
+
+func handleLogout() error {
+	cfg, err := config.LoadConfig()
+	if err != nil || cfg.APIKey == "" {
+		fmt.Println("You are not logged in.")
+		return nil
+	}
+
+	cfg.APIKey = ""
+	err = config.SaveConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("could not clear credentials: %w", err)
+	}
+
+	fmt.Println()
+	fmt.Println("✅ Logged out successfully")
+	fmt.Println()
+	return nil
+}
+
+func handleInteractiveSetup() error {
+	reader := bufio.NewReader(os.Stdin)
+
+	// Check if already authenticated
+	cfg, err := config.LoadConfig()
+	if err == nil && cfg.APIKey != "" {
+		maskedKey := cfg.APIKey
+		if len(maskedKey) > 12 {
+			maskedKey = maskedKey[:8] + "..." + maskedKey[len(maskedKey)-4:]
+		}
+		fmt.Println()
+		fmt.Println("✅ You are already authenticated")
+		fmt.Printf("   API Key: %s\n", maskedKey)
+		fmt.Println()
+		fmt.Print("Do you want to login with a different account? (y/N): ")
+		answer, _ := reader.ReadString('\n')
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		if answer != "y" && answer != "yes" {
+			return nil
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("╔═══════════════════════════════════════════╗")
+	fmt.Println("║       🧠 JosephsBrain CLI Setup           ║")
+	fmt.Println("╚═══════════════════════════════════════════╝")
+	fmt.Println()
+	fmt.Println("Welcome! To use the CLI, you need a JosephsBrain account.")
+	fmt.Println()
+	fmt.Println("Options:")
+	fmt.Println("  [1] Login with existing account")
+	fmt.Println("  [2] Enter API key manually")
+	fmt.Println("  [3] Register a new account (opens browser)")
+	fmt.Println("  [4] Exit")
+	fmt.Println()
+	fmt.Print("Choose an option (1-4): ")
+
+	choice, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("could not read choice: %w", err)
+	}
+	choice = strings.TrimSpace(choice)
+
+	switch choice {
+	case "1":
+		return handleUserLogin()
+	case "2":
+		return handleManualAPIKey()
+	case "3":
+		fmt.Println()
+		fmt.Println("🌐 Opening browser for registration...")
+		err := openBrowser(webURL + "/login")
+		if err != nil {
+			fmt.Println()
+			fmt.Println("Could not open browser. Please visit:")
+			fmt.Printf("  %s/login\n", webURL)
+		} else {
+			fmt.Println("✅ Browser opened!")
+		}
+		fmt.Println()
+		fmt.Println("After registration, run 'jbrain setup login' to authenticate.")
+		return nil
+	case "4":
+		fmt.Println("Setup cancelled.")
+		return nil
+	default:
+		fmt.Println("Invalid option. Please run 'jbrain setup' again.")
+		return nil
+	}
 }
