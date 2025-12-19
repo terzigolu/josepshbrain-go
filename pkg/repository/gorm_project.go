@@ -39,7 +39,13 @@ func (r *gormProjectRepository) GetByName(name string) (*models.Project, error) 
 
 func (r *gormProjectRepository) GetAll() ([]models.Project, error) {
 	var projects []models.Project
-	err := r.db.Find(&projects).Error
+	err := r.db.Preload("Organization").Find(&projects).Error
+	return projects, err
+}
+
+func (r *gormProjectRepository) GetByOrganizationID(orgID uuid.UUID) ([]models.Project, error) {
+	var projects []models.Project
+	err := r.db.Where("organization_id = ?", orgID).Find(&projects).Error
 	return projects, err
 }
 
@@ -67,4 +73,4 @@ func (r *gormProjectRepository) GetActive() (*models.Project, error) {
 		return nil, err
 	}
 	return &project, nil
-} 
+}

@@ -11,6 +11,7 @@ type ProjectRepository interface {
 	GetByID(id uuid.UUID) (*models.Project, error)
 	GetByName(name string) (*models.Project, error)
 	GetAll() ([]models.Project, error)
+	GetByOrganizationID(orgID uuid.UUID) ([]models.Project, error)
 	Update(project *models.Project) error
 	Delete(id uuid.UUID) error
 	SetActive(id uuid.UUID) error
@@ -76,12 +77,28 @@ type AnnotationRepository interface {
 	Delete(id uuid.UUID) error
 }
 
+// OrganizationRepository defines the interface for organization operations
+type OrganizationRepository interface {
+	Create(org *models.Organization) error
+	GetByID(id uuid.UUID) (*models.Organization, error)
+	GetBySlug(slug string) (*models.Organization, error)
+	GetByUserID(userID uuid.UUID) ([]models.Organization, error)
+	GetAll() ([]models.Organization, error)
+	Update(org *models.Organization) error
+	Delete(id uuid.UUID) error
+	AddMember(orgID, userID uuid.UUID, role models.OrganizationRole) error
+	RemoveMember(orgID, userID uuid.UUID) error
+	GetMembers(orgID uuid.UUID) ([]models.OrganizationMember, error)
+	UpdateMemberRole(orgID, userID uuid.UUID, role models.OrganizationRole) error
+}
+
 // Repository aggregates all repository interfaces
 type Repository struct {
-	Project    ProjectRepository
-	Task       TaskRepository
-	Memory     MemoryRepository
-	Context    ContextRepository
-	Tag        TagRepository
-	Annotation AnnotationRepository
-} 
+	Project      ProjectRepository
+	Task         TaskRepository
+	Memory       MemoryRepository
+	Context      ContextRepository
+	Tag          TagRepository
+	Annotation   AnnotationRepository
+	Organization OrganizationRepository
+}
