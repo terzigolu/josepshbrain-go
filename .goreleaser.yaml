@@ -66,6 +66,6 @@ brews:
 release:
   github:
     owner: terzigolu
-    name: josepshbrain-go
+    name: ramorie
   draft: false
   prerelease: auto
