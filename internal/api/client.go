@@ -383,12 +383,15 @@ func (c *Client) GetActiveTask() (*models.Task, error) {
 		return nil, nil
 	}
 
-	var task models.Task
-	if err := json.Unmarshal(respBody, &task); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal active task: %w", err)
+	// Backend returns {"active_task": task} or {"active_task": null}
+	var response struct {
+		ActiveTask *models.Task `json:"active_task"`
+	}
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal active task response: %w", err)
 	}
 
-	return &task, nil
+	return response.ActiveTask, nil
 }
 
 func (c *Client) ElaborateTask(taskID string) (*models.Annotation, error) {
