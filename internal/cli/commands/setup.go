@@ -11,6 +11,7 @@ import (
 
 	"github.com/terzigolu/josepshbrain-go/internal/api"
 	"github.com/terzigolu/josepshbrain-go/internal/config"
+	apierrors "github.com/terzigolu/josepshbrain-go/internal/errors"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/term"
 )
@@ -121,21 +122,28 @@ func handleUserLogin() error {
 	if err != nil {
 		fmt.Println(" ❌")
 		fmt.Println()
-		fmt.Println("Login failed. Please check your credentials.")
+		
+		// Use enhanced error parsing
+		errorMsg := apierrors.ParseAPIError(err)
+		fmt.Println(errorMsg)
 		fmt.Println()
-		fmt.Print("Don't have an account? Open browser to register? (Y/n): ")
-		reader := bufio.NewReader(os.Stdin)
-		answer, _ := reader.ReadString('\n')
-		answer = strings.TrimSpace(strings.ToLower(answer))
-		if answer == "" || answer == "y" || answer == "yes" {
-			fmt.Println()
-			fmt.Println("🌐 Opening browser...")
-			browserErr := openBrowser(webURL + "/login")
-			if browserErr != nil {
-				fmt.Printf("Please visit: %s/login\n", webURL)
+		
+		// Don't offer to register if account is locked or rate limited
+		if !apierrors.IsRateLimitError(err) && !strings.Contains(strings.ToLower(err.Error()), "locked") {
+			fmt.Print("Don't have an account? Open browser to register? (Y/n): ")
+			reader := bufio.NewReader(os.Stdin)
+			answer, _ := reader.ReadString('\n')
+			answer = strings.TrimSpace(strings.ToLower(answer))
+			if answer == "" || answer == "y" || answer == "yes" {
+				fmt.Println()
+				fmt.Println("🌐 Opening browser...")
+				browserErr := openBrowser(webURL + "/login")
+				if browserErr != nil {
+					fmt.Printf("Please visit: %s/login\n", webURL)
+				}
 			}
 		}
-		return fmt.Errorf("login failed: %w", err)
+		return fmt.Errorf("login failed")
 	}
 
 	// Save API key to config

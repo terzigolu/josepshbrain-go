@@ -7,6 +7,8 @@ import (
 
 	"github.com/terzigolu/josepshbrain-go/internal/api"
 	"github.com/terzigolu/josepshbrain-go/internal/config"
+	"github.com/terzigolu/josepshbrain-go/internal/constants"
+	apierrors "github.com/terzigolu/josepshbrain-go/internal/errors"
 	"github.com/urfave/cli/v2"
 )
 
@@ -51,6 +53,22 @@ func rememberCmd() *cli.Command {
 			content := c.Args().First()
 			projectID := c.String("project")
 
+			// Check content length limit before sending
+			if !constants.IsWithinMemoryLimit(content) {
+				chars, tokens, usage := constants.GetContentStats(content)
+				fmt.Printf("❌ Content exceeds maximum limit!\n")
+				fmt.Printf("   Your content: %d chars (~%d tokens)\n", chars, tokens)
+				fmt.Printf("   Maximum: %d chars (~%d tokens)\n", constants.MaxMemoryChars, constants.MaxMemoryChars/constants.CharsPerToken)
+				fmt.Printf("   Usage: %.1f%%\n", usage)
+				return fmt.Errorf("content too large")
+			}
+
+			// Show warning if approaching limit (80%+)
+			chars, tokens, usage := constants.GetContentStats(content)
+			if usage >= constants.WarningThresholdPercent {
+				fmt.Printf("⚠️  Warning: Content is %.1f%% of maximum limit (%d chars)\n", usage, chars)
+			}
+
 			if projectID == "" {
 				cfg, err := config.LoadConfig()
 				if err != nil || cfg.ActiveProjectID == "" {
@@ -62,10 +80,11 @@ func rememberCmd() *cli.Command {
 			client := api.NewClient()
 			memory, err := client.CreateMemory(projectID, content)
 			if err != nil {
-				fmt.Printf("Error creating memory: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 			fmt.Printf("🧠 Memory stored successfully! (ID: %s)\n", memory.ID.String()[:8])
+			fmt.Printf("   Size: %d chars (~%d tokens)\n", chars, tokens)
 			
 			// Show if memory was auto-linked to active task
 			if memory.LinkedTaskID != nil {
@@ -100,7 +119,7 @@ func memoriesCmd() *cli.Command {
 			client := api.NewClient()
 			memories, err := client.ListMemories(projectID, "") // No search query
 			if err != nil {
-				fmt.Printf("Error listing memories: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 
@@ -136,7 +155,7 @@ func recallCmd() *cli.Command {
 			client := api.NewClient()
 			memories, err := client.ListMemories("", query) // Search across all projects
 			if err != nil {
-				fmt.Printf("Error recalling memories: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 
@@ -173,7 +192,7 @@ func getCmd() *cli.Command {
 			client := api.NewClient()
 			memory, err := client.GetMemory(memoryID)
 			if err != nil {
-				fmt.Printf("Error getting memory: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 
@@ -198,7 +217,7 @@ func forgetCmd() *cli.Command {
 			client := api.NewClient()
 			err := client.DeleteMemory(memoryID)
 			if err != nil {
-				fmt.Printf("Error forgetting memory: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 

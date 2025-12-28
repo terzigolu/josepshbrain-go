@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/terzigolu/josepshbrain-go/internal/api"
+	apierrors "github.com/terzigolu/josepshbrain-go/internal/errors"
 	"github.com/urfave/cli/v2"
 )
 
@@ -68,7 +69,7 @@ func taskListCmd() *cli.Command {
 
 			tasks, err := client.ListTasks(projectID, status)
 			if err != nil {
-				fmt.Printf("Error listing tasks: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 
@@ -136,7 +137,7 @@ func taskCreateCmd() *cli.Command {
 
 			task, err := client.CreateTask(projectID, title, description, priority)
 			if err != nil {
-				fmt.Printf("Error creating task: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 
@@ -163,7 +164,7 @@ func taskShowCmd() *cli.Command {
 			client := api.NewClient()
 			task, err := client.GetTask(taskID)
 			if err != nil {
-				fmt.Printf("Error getting task: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 
@@ -272,7 +273,7 @@ func taskUpdateCmd() *cli.Command {
 			client := api.NewClient()
 			task, err := client.UpdateTask(taskID, updateData)
 			if err != nil {
-				fmt.Printf("Error updating task: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 
@@ -297,7 +298,7 @@ func taskStartCmd() *cli.Command {
 			client := api.NewClient()
 			err := client.StartTask(taskID)
 			if err != nil {
-				fmt.Printf("Error starting task: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 			
@@ -328,7 +329,7 @@ func taskCompleteCmd() *cli.Command {
 			client := api.NewClient()
 			err := client.CompleteTask(taskID)
 			if err != nil {
-				fmt.Printf("Error completing task: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 			
@@ -358,7 +359,7 @@ func taskStopCmd() *cli.Command {
 			client := api.NewClient()
 			err := client.StopTask(taskID)
 			if err != nil {
-				fmt.Printf("Error stopping task: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 			
@@ -382,7 +383,7 @@ func taskActiveCmd() *cli.Command {
 			client := api.NewClient()
 			task, err := client.GetActiveTask()
 			if err != nil {
-				fmt.Printf("Error getting active task: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 			
@@ -420,7 +421,7 @@ func taskDeleteCmd() *cli.Command {
 			client := api.NewClient()
 			err := client.DeleteTask(taskID)
 			if err != nil {
-				fmt.Printf("Error deleting task: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 
@@ -447,7 +448,7 @@ func taskElaborateCmd() *cli.Command {
 			_, err := client.ElaborateTask(taskID)
 			if err != nil {
 				// The error from the API client is already quite descriptive
-				fmt.Printf("Error elaborating task: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 
@@ -484,7 +485,7 @@ func taskDuplicateCmd() *cli.Command {
 			// Get original task
 			original, err := client.GetTask(taskID)
 			if err != nil {
-				fmt.Printf("Error getting task: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 
@@ -503,7 +504,7 @@ func taskDuplicateCmd() *cli.Command {
 				original.Priority,
 			)
 			if err != nil {
-				fmt.Printf("Error creating duplicate task: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 
@@ -713,14 +714,14 @@ func taskProgressCmd() *cli.Command {
 			// First get the task to resolve short ID to full UUID
 			task, err := client.GetTask(taskID)
 			if err != nil {
-				fmt.Printf("Error finding task: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 
 			updateData := map[string]interface{}{"progress": progress}
 			task, err = client.UpdateTask(task.ID.String(), updateData)
 			if err != nil {
-				fmt.Printf("Error updating progress: %v\n", err)
+				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 
