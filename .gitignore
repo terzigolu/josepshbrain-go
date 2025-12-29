@@ -21,6 +21,9 @@ jbraincli-*
 /pkg/
 *.sum
 
+# GoReleaser dist folder
+dist/
+
 # IDE files
 .idea/
 .vscode/
