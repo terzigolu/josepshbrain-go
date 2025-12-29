@@ -221,6 +221,32 @@ func ToolDefinitions() []toolDef {
 			Description: "Bir context pack'i aktif (published) yap",
 			InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"packId": map[string]interface{}{"type": "string"}}, "required": []string{"packId"}},
 		},
+		// Decision tools - for agents to record architectural decisions
+		{
+			Name:        "list_decisions",
+			Description: "Kararları (ADR) listele. Agentlar aldıkları kararları burada kaydeder.",
+			InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"status": map[string]interface{}{"type": "string", "description": "Durum filtresi: draft, proposed, approved, deprecated"}, "area": map[string]interface{}{"type": "string", "description": "Alan filtresi: Frontend, Backend, Architecture, etc."}, "limit": map[string]interface{}{"type": "number"}}},
+		},
+		{
+			Name:        "get_decision",
+			Description: "Belirli bir kararın detaylarını getir",
+			InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"decisionId": map[string]interface{}{"type": "string", "description": "Decision ID veya ADR numarası (örn: ADR-001)"}}, "required": []string{"decisionId"}},
+		},
+		{
+			Name:        "create_decision",
+			Description: "Yeni bir karar (ADR) oluştur. Agentlar önemli kararları burada kayıt altına alır.",
+			InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"title": map[string]interface{}{"type": "string", "description": "Karar başlığı"}, "description": map[string]interface{}{"type": "string", "description": "Kısa açıklama"}, "status": map[string]interface{}{"type": "string", "description": "Durum: draft, proposed, approved, deprecated"}, "area": map[string]interface{}{"type": "string", "description": "Alan: Frontend, Backend, Architecture, DevOps, etc."}, "context": map[string]interface{}{"type": "string", "description": "Kararın bağlamı ve nedeni"}, "consequences": map[string]interface{}{"type": "string", "description": "Kararın sonuçları ve etkileri"}}, "required": []string{"title"}},
+		},
+		{
+			Name:        "update_decision",
+			Description: "Mevcut bir kararı güncelle",
+			InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"decisionId": map[string]interface{}{"type": "string"}, "title": map[string]interface{}{"type": "string"}, "description": map[string]interface{}{"type": "string"}, "status": map[string]interface{}{"type": "string"}, "area": map[string]interface{}{"type": "string"}, "context": map[string]interface{}{"type": "string"}, "consequences": map[string]interface{}{"type": "string"}}, "required": []string{"decisionId"}},
+		},
+		{
+			Name:        "delete_decision",
+			Description: "Bir kararı sil",
+			InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"decisionId": map[string]interface{}{"type": "string"}}, "required": []string{"decisionId"}},
+		},
 	}
 }
 
@@ -970,6 +996,86 @@ func CallTool(client *api.Client, name string, args map[string]interface{}) (int
 			return nil, err
 		}
 		return map[string]interface{}{"ok": true, "pack": pack}, nil
+
+	// Decision tools - for agents to record architectural decisions
+	case "list_decisions":
+		status, _ := args["status"].(string)
+		area, _ := args["area"].(string)
+		limit := toInt(args["limit"])
+		decisions, err := client.ListDecisions(strings.TrimSpace(status), strings.TrimSpace(area), limit)
+		if err != nil {
+			return nil, err
+		}
+		return decisions, nil
+
+	case "get_decision":
+		decisionID, _ := args["decisionId"].(string)
+		decisionID = strings.TrimSpace(decisionID)
+		if decisionID == "" {
+			return nil, errors.New("decisionId is required")
+		}
+		return client.GetDecision(decisionID)
+
+	case "create_decision":
+		title, _ := args["title"].(string)
+		title = strings.TrimSpace(title)
+		if title == "" {
+			return nil, errors.New("title is required")
+		}
+		description, _ := args["description"].(string)
+		status, _ := args["status"].(string)
+		area, _ := args["area"].(string)
+		context, _ := args["context"].(string)
+		consequences, _ := args["consequences"].(string)
+
+		return client.CreateDecision(
+			title,
+			strings.TrimSpace(description),
+			strings.TrimSpace(status),
+			strings.TrimSpace(area),
+			strings.TrimSpace(context),
+			strings.TrimSpace(consequences),
+		)
+
+	case "update_decision":
+		decisionID, _ := args["decisionId"].(string)
+		decisionID = strings.TrimSpace(decisionID)
+		if decisionID == "" {
+			return nil, errors.New("decisionId is required")
+		}
+
+		updates := make(map[string]interface{})
+		if title, ok := args["title"].(string); ok && strings.TrimSpace(title) != "" {
+			updates["title"] = strings.TrimSpace(title)
+		}
+		if description, ok := args["description"].(string); ok {
+			updates["description"] = strings.TrimSpace(description)
+		}
+		if status, ok := args["status"].(string); ok && strings.TrimSpace(status) != "" {
+			updates["status"] = strings.TrimSpace(status)
+		}
+		if area, ok := args["area"].(string); ok && strings.TrimSpace(area) != "" {
+			updates["area"] = strings.TrimSpace(area)
+		}
+		if context, ok := args["context"].(string); ok {
+			updates["context"] = strings.TrimSpace(context)
+		}
+		if consequences, ok := args["consequences"].(string); ok {
+			updates["consequences"] = strings.TrimSpace(consequences)
+		}
+
+		return client.UpdateDecision(decisionID, updates)
+
+	case "delete_decision":
+		decisionID, _ := args["decisionId"].(string)
+		decisionID = strings.TrimSpace(decisionID)
+		if decisionID == "" {
+			return nil, errors.New("decisionId is required")
+		}
+		if err := client.DeleteDecision(decisionID); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"ok": true, "deleted": decisionID}, nil
 
 	default:
 		return nil, errors.New("tool not implemented")

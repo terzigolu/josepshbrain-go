@@ -957,3 +957,129 @@ func (c *Client) GetActiveContextPack() (*ContextPack, error) {
 func (c *Client) SetActiveContextPack(id string) (*ContextPack, error) {
 	return c.UseContextPack(id)
 }
+
+// Decision API methods
+
+// Decision represents an architectural decision record (ADR)
+type Decision struct {
+	ID           string    `json:"id"`
+	UserID       string    `json:"user_id"`
+	ProjectID    *string   `json:"project_id,omitempty"`
+	ADRNumber    string    `json:"adr_number"`
+	Title        string    `json:"title"`
+	Description  string    `json:"description"`
+	Status       string    `json:"status"`
+	Area         string    `json:"area"`
+	Content      *string   `json:"content,omitempty"`
+	Context      *string   `json:"context,omitempty"`
+	Consequences *string   `json:"consequences,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// DecisionListResponse represents the response from listing decisions
+type DecisionListResponse struct {
+	Decisions []Decision `json:"decisions"`
+	Total     int64      `json:"total"`
+	Limit     int        `json:"limit"`
+	Offset    int        `json:"offset"`
+}
+
+// ListDecisions lists all decisions with optional filtering
+func (c *Client) ListDecisions(status, area string, limit int) ([]Decision, error) {
+	endpoint := "/decisions"
+	params := url.Values{}
+	if status != "" {
+		params.Add("status", status)
+	}
+	if area != "" {
+		params.Add("area", area)
+	}
+	if limit > 0 {
+		params.Add("limit", fmt.Sprintf("%d", limit))
+	}
+	if len(params) > 0 {
+		endpoint += "?" + params.Encode()
+	}
+
+	respBody, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response DecisionListResponse
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal decisions: %w", err)
+	}
+	return response.Decisions, nil
+}
+
+// GetDecision gets a specific decision by ID or ADR number
+func (c *Client) GetDecision(identifier string) (*Decision, error) {
+	endpoint := fmt.Sprintf("/decisions/%s", identifier)
+	respBody, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var decision Decision
+	if err := json.Unmarshal(respBody, &decision); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal decision: %w", err)
+	}
+	return &decision, nil
+}
+
+// CreateDecision creates a new decision (ADR)
+func (c *Client) CreateDecision(title, description, status, area, context, consequences string) (*Decision, error) {
+	reqBody := map[string]interface{}{
+		"title": title,
+	}
+	if description != "" {
+		reqBody["description"] = description
+	}
+	if status != "" {
+		reqBody["status"] = status
+	}
+	if area != "" {
+		reqBody["area"] = area
+	}
+	if context != "" {
+		reqBody["context"] = context
+	}
+	if consequences != "" {
+		reqBody["consequences"] = consequences
+	}
+
+	respBody, err := c.makeRequest("POST", "/decisions", reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	var decision Decision
+	if err := json.Unmarshal(respBody, &decision); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal decision: %w", err)
+	}
+	return &decision, nil
+}
+
+// UpdateDecision updates an existing decision
+func (c *Client) UpdateDecision(id string, updates map[string]interface{}) (*Decision, error) {
+	endpoint := fmt.Sprintf("/decisions/%s", id)
+	respBody, err := c.makeRequest("PUT", endpoint, updates)
+	if err != nil {
+		return nil, err
+	}
+
+	var decision Decision
+	if err := json.Unmarshal(respBody, &decision); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal decision: %w", err)
+	}
+	return &decision, nil
+}
+
+// DeleteDecision deletes a decision
+func (c *Client) DeleteDecision(id string) error {
+	endpoint := fmt.Sprintf("/decisions/%s", id)
+	_, err := c.makeRequest("DELETE", endpoint, nil)
+	return err
+}

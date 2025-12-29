@@ -44,26 +44,44 @@ func taskListCmd() *cli.Command {
 		Aliases: []string{"ls"},
 		Usage:   "List tasks",
 		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "project", Aliases: []string{"p"}, Usage: "Filter by project ID. If not provided, active project is used."},
+			&cli.StringFlag{Name: "project", Aliases: []string{"p"}, Usage: "Filter by project ID or name. If not provided, active project is used."},
 			&cli.StringFlag{Name: "status", Aliases: []string{"s"}, Usage: "Filter by status (TODO, IN_PROGRESS, COMPLETED)"},
+			&cli.IntFlag{Name: "limit", Aliases: []string{"n"}, Usage: "Limit number of results", Value: 0},
 		},
 		Action: func(c *cli.Context) error {
-			projectID := c.String("project")
+			projectArg := c.String("project")
 			status := c.String("status")
+			limit := c.Int("limit")
 
 			client := api.NewClient()
 
-			if projectID == "" {
-				// If no project is specified, find the active one from the server
-				projects, err := client.ListProjects()
-				if err != nil {
-					return fmt.Errorf("could not fetch projects to find active one: %w", err)
-				}
+			// Fetch projects for name resolution and active project lookup
+			projects, err := client.ListProjects()
+			if err != nil {
+				return fmt.Errorf("could not fetch projects: %w", err)
+			}
+
+			var projectID string
+			if projectArg == "" {
+				// If no project is specified, find the active one
 				for _, p := range projects {
 					if p.IsActive {
 						projectID = p.ID.String()
 						break
 					}
+				}
+			} else {
+				// Resolve project name/short-id to full UUID
+				for _, p := range projects {
+					if p.ID.String() == projectArg ||
+						strings.HasPrefix(p.ID.String(), projectArg) ||
+						strings.EqualFold(p.Name, projectArg) {
+						projectID = p.ID.String()
+						break
+					}
+				}
+				if projectID == "" {
+					return fmt.Errorf("project '%s' not found", projectArg)
 				}
 			}
 
@@ -76,6 +94,11 @@ func taskListCmd() *cli.Command {
 			if len(tasks) == 0 {
 				fmt.Println("No tasks found for the given criteria.")
 				return nil
+			}
+
+			// Apply limit if specified
+			if limit > 0 && len(tasks) > limit {
+				tasks = tasks[:limit]
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -111,23 +134,39 @@ func taskCreateCmd() *cli.Command {
 				return fmt.Errorf("task title is required")
 			}
 			title := c.Args().First()
-			projectID := c.String("project")
+			projectArg := c.String("project")
 			description := c.String("description")
 			priority := c.String("priority")
 
 			client := api.NewClient()
 
-			if projectID == "" {
-				// If no project is specified, find the active one from the server
-				projects, err := client.ListProjects()
-				if err != nil {
-					return fmt.Errorf("could not fetch projects to find active one: %w", err)
-				}
+			// Fetch projects for name resolution and active project lookup
+			projects, err := client.ListProjects()
+			if err != nil {
+				return fmt.Errorf("could not fetch projects: %w", err)
+			}
+
+			var projectID string
+			if projectArg == "" {
+				// If no project is specified, find the active one
 				for _, p := range projects {
 					if p.IsActive {
 						projectID = p.ID.String()
 						break
 					}
+				}
+			} else {
+				// Resolve project name/short-id to full UUID
+				for _, p := range projects {
+					if p.ID.String() == projectArg ||
+						strings.HasPrefix(p.ID.String(), projectArg) ||
+						strings.EqualFold(p.Name, projectArg) {
+						projectID = p.ID.String()
+						break
+					}
+				}
+				if projectID == "" {
+					return fmt.Errorf("project '%s' not found", projectArg)
 				}
 			}
 
@@ -346,9 +385,9 @@ func taskCompleteCmd() *cli.Command {
 // taskStopCmd pauses work on a task (clears active status but keeps IN_PROGRESS).
 func taskStopCmd() *cli.Command {
 	return &cli.Command{
-		Name:    "stop",
-		Aliases: []string{"pause"},
-		Usage:   "Stop working on a task (clears active, keeps IN_PROGRESS)",
+		Name:      "stop",
+		Aliases:   []string{"pause"},
+		Usage:     "Stop working on a task (clears active, keeps IN_PROGRESS)",
 		ArgsUsage: "[task-id]",
 		Action: func(c *cli.Context) error {
 			if c.NArg() == 0 {
@@ -604,21 +643,37 @@ func taskNextCmd() *cli.Command {
 		},
 		Action: func(c *cli.Context) error {
 			count := c.Int("count")
-			projectID := c.String("project")
+			projectArg := c.String("project")
 
 			client := api.NewClient()
 
-			if projectID == "" {
+			// Fetch projects for name resolution and active project lookup
+			projects, err := client.ListProjects()
+			if err != nil {
+				return fmt.Errorf("could not fetch projects: %w", err)
+			}
+
+			var projectID string
+			if projectArg == "" {
 				// Find active project
-				projects, err := client.ListProjects()
-				if err != nil {
-					return fmt.Errorf("could not fetch projects: %w", err)
-				}
 				for _, p := range projects {
 					if p.IsActive {
 						projectID = p.ID.String()
 						break
 					}
+				}
+			} else {
+				// Resolve project name/short-id to full UUID
+				for _, p := range projects {
+					if p.ID.String() == projectArg ||
+						strings.HasPrefix(p.ID.String(), projectArg) ||
+						strings.EqualFold(p.Name, projectArg) {
+						projectID = p.ID.String()
+						break
+					}
+				}
+				if projectID == "" {
+					return fmt.Errorf("project '%s' not found", projectArg)
 				}
 			}
 
