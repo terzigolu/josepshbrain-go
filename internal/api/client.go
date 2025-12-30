@@ -218,12 +218,17 @@ func (c *Client) UpdateProject(id string, data map[string]interface{}) (*models.
 }
 
 // Task API methods
-func (c *Client) CreateTask(projectID, title, description, priority string) (*models.Task, error) {
+func (c *Client) CreateTask(projectID, title, description, priority string, tags ...string) (*models.Task, error) {
 	reqBody := map[string]interface{}{
 		"project_id":  projectID,
 		"title":       title,
 		"description": description,
 		"priority":    priority,
+	}
+
+	// Add tags if provided
+	if len(tags) > 0 {
+		reqBody["tags"] = tags
 	}
 
 	respBody, err := c.makeRequest("POST", "/tasks", reqBody)
@@ -486,10 +491,15 @@ func (c *Client) AIDependencies(taskID string) (map[string]interface{}, error) {
 }
 
 // Memory API methods
-func (c *Client) CreateMemory(projectID, content string) (*models.Memory, error) {
+func (c *Client) CreateMemory(projectID, content string, tags ...string) (*models.Memory, error) {
 	reqBody := map[string]interface{}{
 		"project_id": projectID,
 		"content":    content,
+	}
+
+	// Add tags if provided
+	if len(tags) > 0 {
+		reqBody["tags"] = tags
 	}
 
 	respBody, err := c.makeRequest("POST", "/memories", reqBody)

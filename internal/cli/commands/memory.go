@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/terzigolu/josepshbrain-go/internal/api"
@@ -37,14 +38,20 @@ func NewRememberCommand() *cli.Command {
 // rememberCmd creates a new memory item.
 func rememberCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "remember",
-		Usage:     "Create a new memory",
-		ArgsUsage: "[content]",
+		Name:                   "remember",
+		Usage:                  "Create a new memory",
+		ArgsUsage:              "[content]",
+		UseShortOptionHandling: true,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "project",
 				Aliases: []string{"p"},
 				Usage:   "Project ID. Defaults to the active project.",
+			},
+			&cli.StringSliceFlag{
+				Name:    "tags",
+				Aliases: []string{"t"},
+				Usage:   "Tags for the memory (can be used multiple times or comma-separated)",
 			},
 		},
 		Action: func(c *cli.Context) error {
@@ -53,6 +60,7 @@ func rememberCmd() *cli.Command {
 			}
 			content := c.Args().First()
 			projectID := c.String("project")
+			tags := c.StringSlice("tags")
 
 			// Check content length limit before sending
 			if !constants.IsWithinMemoryLimit(content) {
@@ -79,13 +87,16 @@ func rememberCmd() *cli.Command {
 			}
 
 			client := api.NewClient()
-			memory, err := client.CreateMemory(projectID, content)
+			memory, err := client.CreateMemory(projectID, content, tags...)
 			if err != nil {
 				fmt.Println(apierrors.ParseAPIError(err))
 				return err
 			}
 			fmt.Printf("🧠 Memory stored successfully! (ID: %s)\n", memory.ID.String()[:8])
 			fmt.Printf("   Size: %d chars (~%d tokens)\n", chars, tokens)
+			if len(tags) > 0 {
+				fmt.Printf("   Tags: %s\n", strings.Join(tags, ", "))
+			}
 
 			// Show if memory was auto-linked to active task
 			if memory.LinkedTaskID != nil {
@@ -99,8 +110,9 @@ func rememberCmd() *cli.Command {
 // memoriesCmd lists all memory items.
 func memoriesCmd() *cli.Command {
 	return &cli.Command{
-		Name:  "memories",
-		Usage: "List all memories",
+		Name:                   "memories",
+		Usage:                  "List all memories",
+		UseShortOptionHandling: true,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "project",
@@ -116,11 +128,24 @@ func memoriesCmd() *cli.Command {
 				Name:  "org-only",
 				Usage: "Only show memories from organization projects",
 			},
+			&cli.IntFlag{
+				Name:    "limit",
+				Aliases: []string{"n"},
+				Usage:   "Limit number of results",
+				Value:   0,
+			},
+			&cli.StringFlag{
+				Name:    "tag",
+				Aliases: []string{"t"},
+				Usage:   "Filter by tag",
+			},
 		},
 		Action: func(c *cli.Context) error {
 			projectID := c.String("project")
 			showAll := c.Bool("all")
 			orgOnly := c.Bool("org-only")
+			limit := c.Int("limit")
+			tagFilter := c.String("tag")
 
 			if !showAll && projectID == "" {
 				cfg, err := config.LoadConfig()
@@ -141,6 +166,21 @@ func memoriesCmd() *cli.Command {
 				return err
 			}
 
+			// Filter by tag if requested
+			if tagFilter != "" {
+				var filtered []models.Memory
+				for _, m := range memories {
+					tags := getTagsAsStrings(m.Tags)
+					for _, tag := range tags {
+						if strings.EqualFold(tag, tagFilter) {
+							filtered = append(filtered, m)
+							break
+						}
+					}
+				}
+				memories = filtered
+			}
+
 			// Filter by org-only if requested
 			if orgOnly {
 				var filtered []models.Memory
@@ -157,15 +197,24 @@ func memoriesCmd() *cli.Command {
 				return nil
 			}
 
+			// Apply limit if specified
+			if limit > 0 && len(memories) > limit {
+				memories = memories[:limit]
+			}
+
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "ID\tORG\tCONTENT")
-			fmt.Fprintln(w, "--\t---\t-------")
+			fmt.Fprintln(w, "ID\tTAGS\tCONTENT")
+			fmt.Fprintln(w, "--\t----\t-------")
 			for _, m := range memories {
-				orgName := "-"
-				if m.Project != nil && m.Project.Organization != nil {
-					orgName = m.Project.Organization.Name
+				tagsStr := "-"
+				tags := getTagsAsStrings(m.Tags)
+				if len(tags) > 0 {
+					tagsStr = strings.Join(tags, ",")
+					if len(tagsStr) > 15 {
+						tagsStr = tagsStr[:12] + "..."
+					}
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\n", m.ID.String()[:8], truncateString(orgName, 15), truncateString(m.Content, 55))
+				fmt.Fprintf(w, "%s\t%s\t%s\n", m.ID.String()[:8], tagsStr, truncateString(m.Content, 55))
 			}
 			w.Flush()
 			return nil
@@ -176,20 +225,49 @@ func memoriesCmd() *cli.Command {
 // recallCmd searches memory items.
 func recallCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "recall",
-		Usage:     "Search within your memories",
-		ArgsUsage: "[search-query]",
+		Name:                   "recall",
+		Usage:                  "Search within your memories",
+		ArgsUsage:              "[search-query]",
+		UseShortOptionHandling: true,
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "project",
+				Aliases: []string{"p"},
+				Usage:   "Filter by project ID (default: search all projects)",
+			},
+			&cli.IntFlag{
+				Name:    "limit",
+				Aliases: []string{"n"},
+				Usage:   "Limit number of results",
+				Value:   20,
+			},
+		},
 		Action: func(c *cli.Context) error {
 			if c.NArg() == 0 {
 				return fmt.Errorf("a search query is required")
 			}
 			query := c.Args().First()
+			projectID := c.String("project")
+			limit := c.Int("limit")
+
+			// If project not specified, use active project
+			if projectID == "" && !c.IsSet("project") {
+				cfg, err := config.LoadConfig()
+				if err == nil && cfg.ActiveProjectID != "" {
+					projectID = cfg.ActiveProjectID
+				}
+			}
 
 			client := api.NewClient()
-			memories, err := client.ListMemories("", query) // Search across all projects
+			memories, err := client.ListMemories(projectID, query)
 			if err != nil {
 				fmt.Println(apierrors.ParseAPIError(err))
 				return err
+			}
+
+			// Apply limit
+			if limit > 0 && len(memories) > limit {
+				memories = memories[:limit]
 			}
 
 			if len(memories) == 0 {
@@ -258,4 +336,29 @@ func forgetCmd() *cli.Command {
 			return nil
 		},
 	}
+}
+
+// getTagsAsStrings converts interface{} tags to []string
+func getTagsAsStrings(tags interface{}) []string {
+	if tags == nil {
+		return nil
+	}
+
+	// Try []interface{} first (common JSON unmarshaling result)
+	if arr, ok := tags.([]interface{}); ok {
+		result := make([]string, 0, len(arr))
+		for _, v := range arr {
+			if s, ok := v.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	}
+
+	// Try []string directly
+	if arr, ok := tags.([]string); ok {
+		return arr
+	}
+
+	return nil
 }

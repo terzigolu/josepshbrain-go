@@ -121,22 +121,25 @@ func taskListCmd() *cli.Command {
 // taskCreateCmd creates a new task.
 func taskCreateCmd() *cli.Command {
 	return &cli.Command{
-		Name:      "create",
-		Usage:     "Create a new task",
-		ArgsUsage: "[title]",
+		Name:                   "create",
+		Usage:                  "Create a new task",
+		ArgsUsage:              "[title]",
+		UseShortOptionHandling: true,
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "project", Aliases: []string{"p"}, Usage: "Project ID. Defaults to active project."},
 			&cli.StringFlag{Name: "description", Aliases: []string{"d"}, Usage: "Task description"},
 			&cli.StringFlag{Name: "priority", Aliases: []string{"P"}, Usage: "Priority (H, M, L)", Value: "M"},
+			&cli.StringSliceFlag{Name: "tags", Aliases: []string{"t"}, Usage: "Tags (comma-separated or multiple -t flags)"},
 		},
 		Action: func(c *cli.Context) error {
 			if c.NArg() == 0 {
-				return fmt.Errorf("task title is required")
+				return fmt.Errorf("task title is required. Usage: ramorie task create [--priority H] [--tags tag1,tag2] \"Task title\"")
 			}
 			title := c.Args().First()
 			projectArg := c.String("project")
 			description := c.String("description")
 			priority := c.String("priority")
+			tags := c.StringSlice("tags")
 
 			client := api.NewClient()
 
@@ -174,7 +177,7 @@ func taskCreateCmd() *cli.Command {
 				return fmt.Errorf("no active project set. Use 'ramorie project use <id>' or specify --project")
 			}
 
-			task, err := client.CreateTask(projectID, title, description, priority)
+			task, err := client.CreateTask(projectID, title, description, priority, tags...)
 			if err != nil {
 				fmt.Println(apierrors.ParseAPIError(err))
 				return err
@@ -182,6 +185,9 @@ func taskCreateCmd() *cli.Command {
 
 			fmt.Printf("✅ Task '%s' created successfully!\n", task.Title)
 			fmt.Printf("ID: %s\n", task.ID.String()[:8])
+			if len(tags) > 0 {
+				fmt.Printf("Tags: %s\n", strings.Join(tags, ", "))
+			}
 			return nil
 		},
 	}
