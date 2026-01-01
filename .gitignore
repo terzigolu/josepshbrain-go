@@ -3,9 +3,11 @@
 .env.*
 !.env.example
 
-# Binaries
-ramorie
-ramorie-*
+# Binaries (root level only)
+/ramorie
+/ramorie-*
+# Exception: npm shim script
+!npm/bin/ramorie
 # Legacy binary names (for backward compatibility)
 jbrain
 jbraincli

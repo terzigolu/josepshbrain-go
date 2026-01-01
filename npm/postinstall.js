@@ -65,7 +65,8 @@ async function main() {
 
   const isWindows = process.platform === 'win32';
   const ext = isWindows ? 'zip' : 'tar.gz';
-  const binaryName = isWindows ? 'ramorie.exe' : 'ramorie';
+  // Use different name to avoid overwriting the shim script
+  const binaryName = isWindows ? 'ramorie-bin.exe' : 'ramorie-bin';
 
   const assetName = `ramorie_${VERSION}_${platform}_${arch}.${ext}`;
   const downloadUrl = `https://github.com/${REPO}/releases/download/v${VERSION}/${assetName}`;
@@ -90,10 +91,18 @@ async function main() {
 
     // Extract using system tools
     console.log('   Extracting...');
+    const extractedBinary = isWindows ? 'ramorie.exe' : 'ramorie';
+    const extractedPath = path.join(binDir, extractedBinary);
+    
     if (isWindows) {
       execSync(`powershell -command "Expand-Archive -Path '${tempFile}' -DestinationPath '${binDir}' -Force"`, { stdio: 'pipe' });
     } else {
       execSync(`tar -xzf "${tempFile}" -C "${binDir}"`, { stdio: 'pipe' });
+    }
+    
+    // Rename to avoid overwriting the shim script
+    if (fs.existsSync(extractedPath)) {
+      fs.renameSync(extractedPath, binaryPath);
     }
     console.log('   ✓ Extracted');
 

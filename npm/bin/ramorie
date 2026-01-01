@@ -1,0 +1,47 @@
+#!/usr/bin/env node
+
+/**
+ * Ramorie CLI - bin shim
+ *
+ * This script executes the downloaded Go binary.
+ * It's a thin wrapper that npm uses to expose the 'ramorie' command.
+ */
+
+const { spawn } = require('child_process');
+const path = require('path');
+const fs = require('fs');
+
+// Determine binary name based on platform
+// Binary is named ramorie-bin to avoid conflict with this shim script
+const binaryName = process.platform === 'win32' ? 'ramorie-bin.exe' : 'ramorie-bin';
+const binaryPath = path.join(__dirname, binaryName);
+
+// Check if binary exists
+if (!fs.existsSync(binaryPath)) {
+  console.error(`
+❌ Ramorie binary not found at: ${binaryPath}
+
+This usually means the postinstall script failed.
+Try reinstalling: npm install -g ramorie
+
+Or install via other methods:
+  • brew install ramorie
+  • go install github.com/terzigolu/josepshbrain-go/cmd/jbraincli@latest
+`);
+  process.exit(1);
+}
+
+// Execute the binary with all arguments passed through
+const child = spawn(binaryPath, process.argv.slice(2), {
+  stdio: 'inherit',
+  windowsHide: true
+});
+
+child.on('error', (err) => {
+  console.error(`Failed to start ramorie: ${err.message}`);
+  process.exit(1);
+});
+
+child.on('close', (code) => {
+  process.exit(code || 0);
+});
