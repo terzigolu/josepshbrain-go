@@ -72,15 +72,19 @@ async function main() {
   const downloadUrl = `https://github.com/${REPO}/releases/download/v${VERSION}/${assetName}`;
 
   const binDir = path.join(__dirname, 'bin');
+  const tempDir = path.join(__dirname, 'temp-extract');
   const tempFile = path.join(__dirname, `ramorie-temp.${ext}`);
   const binaryPath = path.join(binDir, binaryName);
 
   console.log(`📦 Installing Ramorie v${VERSION} for ${platform}/${arch}...`);
 
   try {
-    // Ensure bin directory exists
+    // Ensure directories exist
     if (!fs.existsSync(binDir)) {
       fs.mkdirSync(binDir, { recursive: true });
+    }
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
     }
 
     // Download the archive
@@ -89,18 +93,18 @@ async function main() {
     fs.writeFileSync(tempFile, data);
     console.log('   ✓ Downloaded');
 
-    // Extract using system tools
+    // Extract to temp directory (not bin!) to avoid overwriting shim
     console.log('   Extracting...');
     const extractedBinary = isWindows ? 'ramorie.exe' : 'ramorie';
-    const extractedPath = path.join(binDir, extractedBinary);
+    const extractedPath = path.join(tempDir, extractedBinary);
     
     if (isWindows) {
-      execSync(`powershell -command "Expand-Archive -Path '${tempFile}' -DestinationPath '${binDir}' -Force"`, { stdio: 'pipe' });
+      execSync(`powershell -command "Expand-Archive -Path '${tempFile}' -DestinationPath '${tempDir}' -Force"`, { stdio: 'pipe' });
     } else {
-      execSync(`tar -xzf "${tempFile}" -C "${binDir}"`, { stdio: 'pipe' });
+      execSync(`tar -xzf "${tempFile}" -C "${tempDir}"`, { stdio: 'pipe' });
     }
     
-    // Rename to avoid overwriting the shim script
+    // Move only the binary to bin/ with new name
     if (fs.existsSync(extractedPath)) {
       fs.renameSync(extractedPath, binaryPath);
     }
@@ -111,9 +115,12 @@ async function main() {
       fs.chmodSync(binaryPath, 0o755);
     }
 
-    // Cleanup
+    // Cleanup temp files and directory
     if (fs.existsSync(tempFile)) {
       fs.unlinkSync(tempFile);
+    }
+    if (fs.existsSync(tempDir)) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
     }
 
     console.log(`\n✅ Ramorie v${VERSION} installed successfully!`);
