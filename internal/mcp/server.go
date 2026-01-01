@@ -124,10 +124,12 @@ func ServeStdio(client *api.Client) error {
 				continue
 			}
 
-			b, _ := json.Marshal(result)
+			// Wrap result to ensure structuredContent is always an object
+			wrappedResult := wrapResultAsObject(result)
+			b, _ := json.Marshal(wrappedResult)
 			payload := map[string]interface{}{
 				"isError":           false,
-				"structuredContent": result,
+				"structuredContent": wrappedResult,
 				"content":           []interface{}{textContent{Type: "text", Text: string(b)}},
 			}
 			writeResponse(out, jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: payload})
@@ -154,4 +156,46 @@ func writeResponse(w *bufio.Writer, resp jsonRPCResponse) {
 	w.Write(b)
 	w.WriteByte('\n')
 	w.Flush()
+}
+
+// wrapResultAsObject ensures the result is always an object (not array or null)
+// This is required because MCP protocol expects structuredContent to be an object
+func wrapResultAsObject(result interface{}) map[string]interface{} {
+	if result == nil {
+		return map[string]interface{}{"data": nil}
+	}
+
+	// Use reflection to check if result is a slice/array
+	switch v := result.(type) {
+	case []interface{}:
+		return map[string]interface{}{"items": v, "count": len(v)}
+	case map[string]interface{}:
+		// Already an object, return as-is
+		return v
+	default:
+		// Check if it's a slice using json marshal/unmarshal trick
+		b, err := json.Marshal(result)
+		if err != nil {
+			return map[string]interface{}{"data": result}
+		}
+
+		// Check if JSON starts with '[' (array)
+		if len(b) > 0 && b[0] == '[' {
+			var arr []interface{}
+			if err := json.Unmarshal(b, &arr); err == nil {
+				return map[string]interface{}{"items": arr, "count": len(arr)}
+			}
+		}
+
+		// Check if JSON starts with '{' (object)
+		if len(b) > 0 && b[0] == '{' {
+			var obj map[string]interface{}
+			if err := json.Unmarshal(b, &obj); err == nil {
+				return obj
+			}
+		}
+
+		// Fallback: wrap in data field
+		return map[string]interface{}{"data": result}
+	}
 }
